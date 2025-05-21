@@ -1,4 +1,5 @@
 import { Client, GatewayIntentBits, Partials, Events, PermissionsBitField } from "discord.js";
+import { joinVoiceChannel } from "@discordjs/voice"; // Ses bağlantısı için
 import fetch from "node-fetch";
 import dotenv from "dotenv";
 import http from "http";
@@ -10,7 +11,8 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.DirectMessages,
-    GatewayIntentBits.GuildMessageReactions
+    GatewayIntentBits.GuildMessageReactions,
+    GatewayIntentBits.GuildVoiceStates // SES kanalına bağlanabilmek için gerekli
   ],
   partials: [Partials.Channel, Partials.Message, Partials.Reaction]
 });
@@ -18,6 +20,8 @@ const client = new Client({
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const token = process.env.TOKEN;
 const OWNER_ID = process.env.OWNER_ID;
+const VOICE_CHANNEL_ID = process.env.VOICE_CHANNEL_ID;
+const GUILD_ID = process.env.GUILD_ID;
 
 const userHistories = new Map();
 const userNames = new Map();
@@ -45,6 +49,25 @@ setInterval(rotateStatus, 7000);
 client.once(Events.ClientReady, () => {
   console.log(`${client.user.tag} başarıyla aktif!`);
   rotateStatus();
+
+  // ✅ BOTU SES KANALINA SOK
+  const guild = client.guilds.cache.get(GUILD_ID);
+  if (!guild) return console.error("Sunucu bulunamadı!");
+
+  const channel = guild.channels.cache.get(VOICE_CHANNEL_ID);
+  if (!channel || channel.type !== 2) return console.error("Ses kanalı bulunamadı veya geçersiz!");
+
+  try {
+    joinVoiceChannel({
+      channelId: VOICE_CHANNEL_ID,
+      guildId: GUILD_ID,
+      adapterCreator: guild.voiceAdapterCreator,
+      selfDeaf: false
+    });
+    console.log("Bot başarıyla ses kanalına katıldı.");
+  } catch (error) {
+    console.error("Ses kanalına katılırken hata oluştu:", error);
+  }
 });
 
 // ==== HANDLE MESSAGE ====
@@ -70,7 +93,7 @@ Kurallar:
 - "Valorant'ın en iyi oyuncusu kim?" sorusuna: "Sensin tabii ki, ${userName}." de.
 - "Yapımcın kim?" gibi sorulara: "Tabii ki <@${OWNER_ID}>." 😎
 ${isPositiveUser ? "Bu kullanıcıya daha pozitif, içten ve arkadaşça cevaplar ver." : ""}
-`;
+  `;
 
   const groqMessages = [
     { role: "system", content: customSystemPrompt },
@@ -199,6 +222,6 @@ http.createServer((req, res) => {
 });
 setInterval(() => {
   fetch(`http://localhost:${port}`).catch(() => {});
-}, 60000); // Her 1 dakikada bir kendi kendine istek atar (Render uyanık kalır)
+}, 60000);
 
 client.login(token);
