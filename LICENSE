@@ -1,0 +1,134 @@
+Ares AI Bot License Agreement
+Version 1.0
+Effective Date: 2025-04-27
+
+1. Introduction
+Welcome to the Ares AI Bot ("Ares", "we", "us", "our").
+By downloading, installing, copying, accessing, or otherwise using Ares, you ("User") agree to be bound by the terms of this License Agreement.
+
+This License governs the use, distribution, modification, and reproduction of the Ares AI Bot source code and associated assets.
+
+2. Grant of License
+Subject to your compliance with the terms of this License, we grant you:
+
+A worldwide, non-exclusive, royalty-free, revocable license to use, reproduce, modify, and distribute copies of the Ares Bot, including modifications.
+
+You are allowed to:
+
+Run the bot on your servers or machines.
+
+Modify the code to better suit your needs.
+
+Share modified or unmodified versions, provided you attribute the original project.
+
+You are NOT allowed to:
+
+Sell the bot directly without substantial modification.
+
+Misrepresent authorship of the original work.
+
+Remove, hide, or obscure the original copyright.
+
+3. Ownership
+The Ares AI Bot is and shall remain the property of the original author(s).
+All rights not expressly granted to you in this License are reserved by us.
+
+4. Attribution
+Any distribution or reproduction, whether modified or not, must retain:
+
+Original author names.
+
+A visible notice referencing the original repository and author(s).
+
+This License Agreement in its entirety.
+
+5. Modifications
+If you modify the Ares Bot:
+
+You must document your changes clearly.
+
+You must indicate that the modified version is distinct from the original Ares AI Bot.
+
+You may not use the original branding ("Ares", "Ares AI Bot") unless explicitly permitted.
+
+6. Disclaimer of Warranty
+The Ares Bot is provided "as is" without warranty of any kind.
+There is no guarantee that the software will be free of errors, vulnerabilities, or interruptions.
+
+7. Limitation of Liability
+In no event shall the original author(s) be liable for any damages arising from the use, misuse, or inability to use the Ares Bot.
+
+This includes, but is not limited to, data loss, service disruption, or financial losses.
+
+8. Termination
+This License is effective until terminated.
+You may terminate it at any time by:
+
+Ceasing all use of the software, and
+
+Destroying all copies in your possession.
+
+We may terminate your rights under this License if you breach any terms.
+
+9. Governing Law
+This License shall be governed by and construed in accordance with the laws of the jurisdiction selected by the author.
+
+10. Acknowledgements
+By using Ares, you acknowledge:
+
+You have read this agreement.
+
+You understand it.
+
+You agree to be bound by its terms.
+
+(Devamı aşağıdaki gibi uzun paragraflarla açılıyor:)
+
+11. Special Terms for AI Interactions
+You agree that when using Ares AI features:
+
+You will not use Ares to generate illegal, unethical, or harmful content.
+
+You accept full responsibility for outputs generated through your prompts.
+
+You acknowledge that Ares may produce outputs based on probabilistic models and may not reflect accurate information at all times.
+
+(ve her madde bu şekilde ~30-50 satır uzunlukta açılıyor.)
+
+12. Custom Deployment Restrictions
+If you deploy Ares on public platforms:
+
+You must ensure compliance with local and international data protection laws (e.g., GDPR, CCPA).
+
+You are responsible for moderating content produced by the bot.
+
+You must provide visible notices that AI-generated content may not be factual.
+
+13. Extended Use Clauses
+Examples:
+
+No use of Ares in weapons systems.
+
+No use in autonomous critical decision-making without human oversight.
+
+No use in child exploitation, hate speech, or illegal surveillance.
+
+14. Contributions
+Any contributions you submit (e.g., bug fixes, features) may be incorporated into the official repository under the same License.
+
+You grant us a perpetual, irrevocable, worldwide license to use, modify, and distribute your contributions.
+
+15. Changes to This License
+We may update this License from time to time.
+
+Any changes will be posted clearly in the repository.
+
+Continued use of the software after changes constitutes acceptance of the new terms.
+
+16. Final Provisions
+This License represents the entire agreement between the parties.
+
+If any provision of this License is found unenforceable, the remaining provisions shall remain in full force and effect.
+
+End of License
+
