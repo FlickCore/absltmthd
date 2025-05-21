@@ -1,6 +1,7 @@
 import { Client, GatewayIntentBits, Partials, Events, PermissionsBitField } from "discord.js";
 import fetch from "node-fetch";
 import dotenv from "dotenv";
+import http from "http";
 dotenv.config();
 
 const client = new Client({
@@ -46,6 +47,7 @@ client.once(Events.ClientReady, () => {
   rotateStatus();
 });
 
+// ==== HANDLE MESSAGE ====
 async function handleMessage(message) {
   const userId = message.author.id;
   const userName = message.member?.nickname || message.author.username;
@@ -61,14 +63,12 @@ async function handleMessage(message) {
 
   const customSystemPrompt = `
 Sen Canavar adında bir Discord botusun. Kısa, net ve samimi cevaplar verirsin. Gereksiz emoji kullanmazsın.
-
 Kurallar:
 - Türkçeyi düzgün kullan, İngilizce karıştırma.
 - Laf kalabalığından ve boş cümlelerden kaçın.
 - Sadece konuya odaklan ve ciddi ama cana yakın cevap ver.
 - "Valorant'ın en iyi oyuncusu kim?" sorusuna: "Sensin tabii ki, ${userName}." de.
 - "Yapımcın kim?" gibi sorulara: "Tabii ki <@${OWNER_ID}>." 😎
-
 ${isPositiveUser ? "Bu kullanıcıya daha pozitif, içten ve arkadaşça cevaplar ver." : ""}
 `;
 
@@ -103,58 +103,37 @@ ${isPositiveUser ? "Bu kullanıcıya daha pozitif, içten ve arkadaşça cevapla
   }
 }
 
+// ==== KOMUTLARI ÇALIŞTIR ====
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot) return;
 
-  // Bot mention olup olmadığını kontrol et
   const isMention = message.mentions.has(client.user);
   if (!isMention) return;
 
-  // Mesajdan bot mention’ını çıkar ve kalan kısmı al (küçük harfe çevir)
-  const withoutMention = message.content.replace(/<@!?\d+>/g, '').trim().toLowerCase();
+  const withoutMention = message.content.replace(/<@!?(\d+)>/g, "").trim().toLowerCase();
 
-  // Özel cevap: neden konuşmuyorsun
   if (
     userSpeakingStatus.get(message.author.id) === false &&
     (withoutMention.includes("neden konuşmuyorsun") || withoutMention.includes("niye konuşmuyorsun"))
   ) {
-    await message.reply("Yapımcım seninle konuşmamı kısıtladı.");
-    return;
+    return message.reply("Yapımcım seninle konuşmamı kısıtladı.");
   }
 
-  // Global konuşma açık değilse engelle
   if (!globalSpeakingStatus) return;
-
-  // Kişisel konuşma kapalıysa engelle
   if (userSpeakingStatus.get(message.author.id) === false) return;
 
-  // Komutlar
-  if (withoutMention === "c.nuke" || withoutMention.startsWith("c.nuke ")) {
-    console.log("c.nuke komutu tetiklendi");
-
-    if (!message.member) {
-      console.log("message.member undefined!");
-      return message.reply("Bu komutu sunucu içinde kullanmalısın.");
-    }
-
-    if (!message.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
-      console.log("Yetersiz yetki");
+  if (withoutMention === "c.nuke") {
+    if (!message.member || !message.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
       return message.reply("Bu komutu kullanmak için 'Kanalları Yönet' yetkisine sahip olmalısın.");
     }
 
-    try {
-      const channel = message.channel;
-      const clone = await channel.clone();
-      await channel.delete();
-      await clone.send(`Kanal ${message.author} tarafından temizlendi. Geçerli optimizasyonlar uygulandı.`);
-    } catch (err) {
-      console.error("c.nuke hatası:", err);
-      return message.reply("Kanal temizlenirken bir hata oluştu.");
-    }
-    return;
+    const channel = message.channel;
+    const clone = await channel.clone();
+    await channel.delete();
+    return clone.send(`Kanal ${message.author} tarafından temizlendi. Geçerli optimizasyonlar uygulandı.`);
   }
 
-  if (withoutMention === "cv.h" || withoutMention.startsWith("cv.h ")) {
+  if (withoutMention === "cv.h") {
     if (message.author.id !== OWNER_ID) {
       return message.reply("Sen kimsin ya? Bu komutlar sadece yapımcıya özel.");
     }
@@ -169,7 +148,6 @@ client.on(Events.MessageCreate, async (message) => {
 `);
   }
 
-  // Owner özel komutları
   if (withoutMention.startsWith("canavar")) {
     if (message.author.id !== OWNER_ID) {
       return message.reply("Sen kimsin ya? Bu komutları kullanamazsın.");
@@ -199,10 +177,8 @@ client.on(Events.MessageCreate, async (message) => {
     }
   }
 
-  // Cevap ver
   await handleMessage(message);
 
-  // Emoji ekle
   if (!reactedMessages.has(message.id)) {
     try {
       await message.react("👀");
@@ -213,15 +189,16 @@ client.on(Events.MessageCreate, async (message) => {
   }
 });
 
-import http from "http";
-
+// ==== RENDER.COM UYANIK TUTMA ====
 const port = process.env.PORT || 3000;
-
 http.createServer((req, res) => {
   res.writeHead(200);
   res.end("Bot çalışıyor.");
 }).listen(port, () => {
   console.log(`Server ${port} portunda çalışıyor.`);
 });
+setInterval(() => {
+  fetch(`http://localhost:${port}`).catch(() => {});
+}, 60000); // Her 1 dakikada bir kendi kendine istek atar (Render uyanık kalır)
 
 client.login(token);
