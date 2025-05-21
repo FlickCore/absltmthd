@@ -105,19 +105,15 @@ Kısa, net ve samimi konuş. Mizah anlayışın var. Gerektiğinde laf sokarsın
 }
 
 client.on(Events.MessageCreate, async (message) => {
-  await handleMessage(message);
-});
-
-client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot || !message.guild) return;
+
   const contentLower = message.content.toLowerCase();
 
-  if (contentLower.includes("canavar") && message.reference && message.reference.messageId) {
-    const referencedMessage = await message.channel.messages.fetch(message.reference.messageId);
+  const isMentioningBotName = contentLower.includes("canavar");
+  const isReplyingToBot = message.reference && (await message.channel.messages.fetch(message.reference.messageId)).author.id === client.user.id;
 
-    if (referencedMessage.author.id === client.user.id) {
-      await handleMessage(message);
-    }
+  if (isMentioningBotName || isReplyingToBot) {
+    await handleMessage(message);
   }
 });
 
