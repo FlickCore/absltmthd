@@ -129,19 +129,32 @@ client.on(Events.MessageCreate, async (message) => {
   if (userSpeakingStatus.get(message.author.id) === false) return;
 
   // Komutlar
-  if (withoutMention === "c.nuke") {
+  if (withoutMention === "c.nuke" || withoutMention.startsWith("c.nuke ")) {
+    console.log("c.nuke komutu tetiklendi");
+
+    if (!message.member) {
+      console.log("message.member undefined!");
+      return message.reply("Bu komutu sunucu içinde kullanmalısın.");
+    }
+
     if (!message.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
+      console.log("Yetersiz yetki");
       return message.reply("Bu komutu kullanmak için 'Kanalları Yönet' yetkisine sahip olmalısın.");
     }
 
-    const channel = message.channel;
-    const clone = await channel.clone();
-    await channel.delete();
-    await clone.send(`Kanal ${message.author} tarafından temizlendi. Geçerli optimizasyonlar uygulandı.`);
+    try {
+      const channel = message.channel;
+      const clone = await channel.clone();
+      await channel.delete();
+      await clone.send(`Kanal ${message.author} tarafından temizlendi. Geçerli optimizasyonlar uygulandı.`);
+    } catch (err) {
+      console.error("c.nuke hatası:", err);
+      return message.reply("Kanal temizlenirken bir hata oluştu.");
+    }
     return;
   }
 
-  if (withoutMention === "cv.h") {
+  if (withoutMention === "cv.h" || withoutMention.startsWith("cv.h ")) {
     if (message.author.id !== OWNER_ID) {
       return message.reply("Sen kimsin ya? Bu komutlar sadece yapımcıya özel.");
     }
@@ -162,12 +175,12 @@ client.on(Events.MessageCreate, async (message) => {
       return message.reply("Sen kimsin ya? Bu komutları kullanamazsın.");
     }
 
-    if (withoutMention === "canavar konuşmayı kapat") {
+    if (withoutMention.includes("konuşmayı kapat")) {
       globalSpeakingStatus = false;
       return message.reply("Botun genel konuşması kapatıldı.");
     }
 
-    if (withoutMention === "canavar konuşmayı aç") {
+    if (withoutMention.includes("konuşmayı aç")) {
       globalSpeakingStatus = true;
       return message.reply("Botun genel konuşması açıldı.");
     }
