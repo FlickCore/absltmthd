@@ -145,14 +145,14 @@ client.on(Events.MessageCreate, async (message) => {
       return message.reply("Sen kimsin ya? Bu komutlar sadece yapımcıya özel.");
     }
 
-    return message.reply(`
+return message.reply(`
 **Yapımcı Komutları**
-- `canavar konuşmayı kapat`
-- `canavar konuşmayı aç`
-- `canavar @kullanıcı ile konuşma`
-- `canavar @kullanıcı ile konuş`
+- \`canavar konuşmayı kapat\`
+- \`canavar konuşmayı aç\`
+- \`canavar @kullanıcı ile konuşma\`
+- \`canavar @kullanıcı ile konuş\`
 - \`c.nuke\` (yetkililere açık)
-    `);
+`);
   }
 
   // Owner özel komutları
