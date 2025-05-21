@@ -9,22 +9,22 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.DirectMessages,
-    GatewayIntentBits.GuildMessageReactions
+    GatewayIntentBits.GuildMessageReactions,
   ],
-  partials: [Partials.Channel, Partials.Message, Partials.Reaction]
+  partials: [Partials.Channel, Partials.Message, Partials.Reaction],
 });
 
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const token = process.env.TOKEN;
 const OWNER_ID = process.env.OWNER_ID;
+const NUKE_ROLE_ID = "1369039538906861598"; // Nuke komutu yetkili rolü ID'si
 
 const userHistories = new Map();
 const userNames = new Map();
-const userSpeakingStatus = new Map(); // Kullanıcı ID → true/false (konuşabilir mi)
-const userCustomNames = new Map();   // Kullanıcı ID → alternatif isim
-let globalSpeakingStatus = true; // Genel bot konuşma durumu (true=aktif, false=kapalı)
+const userSpeakingStatus = new Map(); // Kullanıcı → true/false (konuşabilir mi)
+let globalSpeakingStatus = true; // Genel bot konuşma durumu
 
-const respondedMessages = new Set(); // Mesaj ID'si tekrar cevap vermemek için
+const respondedMessages = new Set(); // Cevaplanan mesajlar ID seti
 const reactedMessages = new Set(); // Reaksiyon eklenen mesajlar
 
 // Animasyonlu statusler
@@ -32,69 +32,37 @@ const statusMessages = [
   "Absolute 🔥",
   "Absolute ♡ Canavar",
   "Canavar Görevde 😈",
-  "Chat'e dalıyorum 😎"
+  "Chat'e dalıyorum 😎",
 ];
 
 let statusIndex = 0;
 function rotateStatus() {
   if (!client.user) return;
-  client.user.setActivity(statusMessages[statusIndex], { type: 0 }); // 0 = Playing
+  client.user.setActivity(statusMessages[statusIndex], { type: 0 });
   statusIndex = (statusIndex + 1) % statusMessages.length;
 }
-setInterval(() => {
-  rotateStatus();
-}, 7000);
+setInterval(() => rotateStatus(), 7000);
 
 client.once(Events.ClientReady, () => {
   console.log(`${client.user.tag} başarıyla aktif!`);
   rotateStatus();
 });
 
-const ownerCommandsList = `
-**Canavar Owner Komutları:**
-- \`canavar konuşmayı kapat\` → Botun genel konuşmasını kapatır.
-- \`canavar konuşmayı aç\` → Botun genel konuşmasını açar.
-- \`canavar @kullanıcı ile konuşma\` → Belirtilen kullanıcı ile konuşmayı kapatır.
-- \`canavar @kullanıcı ile konuş\` → Belirtilen kullanıcı ile konuşmayı açar.
-- \`canavar konuşma durumu\` → Genel ve kullanıcı bazlı konuşma durumlarını gösterir.
-- \`canavar kullanıcılar\` → Konuşması kapalı olan kullanıcıları listeler.
-- \`canavar reset @kullanıcı\` → Kullanıcının geçmişini temizler ve konuşmasını açar.
-- \`canavar setisim @kullanıcı yeniAd\` → Kullanıcı için özel isim belirler.
-- \`canavar isim sıfırla @kullanıcı\` → Kullanıcı özel ismini sıfırlar.
-- \`canavar yardım\` veya \`cv\` veya \`cv.\` → Owner komutlarını gösterir.
-`;
-
 async function handleMessage(message) {
-  if (message.author.bot) return;
-  // message.guild kontrolü kaldırıldı, DM de çalışabilir
-
-  if (respondedMessages.has(message.id)) return; // Aynı mesaja 2. kez cevap verme
+  if (message.author.bot || !message.guild) return;
+  if (respondedMessages.has(message.id)) return;
 
   const userId = message.author.id;
-  // Kullanıcı özel ismi varsa onu kullan, yoksa nickname veya username
-  const userName = userCustomNames.get(userId) || message.member?.nickname || message.author.username;
+  const userName = message.member?.nickname || message.author.username;
 
   if (!globalSpeakingStatus) return;
-  if (userSpeakingStatus.has(userId) && userSpeakingStatus.get(userId) === false) {
-    // Kullanıcı kapalı ise ve "neden az önce konuşmadın" tarzı soru sorarsa cevap ver
-    const lowerContent = message.content.toLowerCase();
-    if (
-      lowerContent.includes("neden") &&
-      (lowerContent.includes("konuşmadın") || lowerContent.includes("cevap vermedin") || lowerContent.includes("neden cevap vermiyorsun"))
-    ) {
-      await message.reply(`Yapımcım <@${OWNER_ID}> seninle konuşmamı kısıtladı, ben suçsuzum.`);
-      respondedMessages.add(message.id);
-      return;
-    }
-    return;
-  }
+  if (userSpeakingStatus.has(userId) && userSpeakingStatus.get(userId) === false) return;
 
   if (!userHistories.has(userId)) userHistories.set(userId, []);
   if (!userNames.has(userId)) userNames.set(userId, userName);
 
   const history = userHistories.get(userId);
   history.push({ role: "user", content: message.content });
-
   if (history.length > 1) history.shift();
 
   const customSystemPrompt = `
@@ -108,7 +76,6 @@ Kurallar:
 - Türkçeyi düzgün kullan, İngilizce karıştırma.
 - "Valorant'ın en iyi oyuncusu kim?" sorusuna kesin cevap ver: "Sensin tabii ki, ${userName}."
 - "Yapımcın kim?" veya "Rabbin kim?" sorulursa şu cevabı ver: "Tabii ki <@${OWNER_ID}>." 😎
-- Owner dışındaki kullanıcılar botun ayar komutlarını kullanmaya kalkarsa, onlara "Sen kimsin ya? Bunu yapamazsın." de.
 - Sana gelen sorulara sadece soruyla ilgili cevap ver, gereksiz eklemeler yapma.
 - Samimi, eğlenceli ama asla kaba olmayan bir tonda ol.
 - Bazen hafif espri, bazen tatlı laf sokabilirsin ama sınırı aşma.
@@ -116,10 +83,7 @@ Kurallar:
 Hadi Canavar, şimdi cevap ver!
 `;
 
-  const groqMessages = [
-    { role: "system", content: customSystemPrompt },
-    ...history
-  ];
+  const groqMessages = [{ role: "system", content: customSystemPrompt }, ...history];
 
   try {
     await message.channel.sendTyping();
@@ -128,12 +92,12 @@ Hadi Canavar, şimdi cevap ver!
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${GROQ_API_KEY}`
+        Authorization: `Bearer ${GROQ_API_KEY}`,
       },
       body: JSON.stringify({
         model: "llama-3.3-70b-versatile",
-        messages: groqMessages
-      })
+        messages: groqMessages,
+      }),
     });
 
     const data = await response.json();
@@ -156,128 +120,143 @@ client.on(Events.MessageCreate, async (message) => {
 
   const contentLower = message.content.toLowerCase();
 
-  // Owner komutlarını göster
-  if (contentLower === "cv" || contentLower === "cv." || contentLower === "canavar yardım") {
+  // --- OWNER KOMUTLARI ---
+
+  // Genel konuşmayı kapat/aç
+  if (contentLower === "canavar konuşmayı kapat") {
     if (message.author.id !== OWNER_ID) {
       await message.reply("Sen kimsin ya? Bunu yapamazsın.");
       return;
     }
-    await message.reply(ownerCommandsList);
+    globalSpeakingStatus = false;
+    await message.reply("Botun genel konuşması kapatıldı.");
+    return;
+  }
+  if (contentLower === "canavar konuşmayı aç") {
+    if (message.author.id !== OWNER_ID) {
+      await message.reply("Sen kimsin ya? Bunu yapamazsın.");
+      return;
+    }
+    globalSpeakingStatus = true;
+    await message.reply("Botun genel konuşması açıldı.");
     return;
   }
 
-  // Owner Komutları
-  if (contentLower.startsWith("canavar ")) {
+  // Kullanıcı bazlı konuşma kapat/aç
+  if (
+    contentLower.startsWith("canavar") &&
+    (contentLower.includes("ile konuşma") || contentLower.includes("ile konuş"))
+  ) {
     if (message.author.id !== OWNER_ID) {
       await message.reply("Sen kimsin ya? Bunu yapamazsın.");
       return;
     }
 
-    // konuşmayı kapat / aç
-    if (contentLower.includes("konuşmayı kapat")) {
-      globalSpeakingStatus = false;
-      await message.reply("Botun genel konuşması kapatıldı.");
-      return;
-    }
-    if (contentLower.includes("konuşmayı aç")) {
-      globalSpeakingStatus = true;
-      await message.reply("Botun genel konuşması açıldı.");
+    const mentionedUser = message.mentions.users.first();
+    if (!mentionedUser) {
+      await message.reply("Bir kullanıcıyı etiketlemen gerekiyor.");
       return;
     }
 
-    // kullanıcı ile konuşma kapat / aç
     if (contentLower.includes("ile konuşma")) {
-      const user = message.mentions.users.first();
-      if (!user) {
-        await message.reply("Bir kullanıcı etiketle.");
-        return;
-      }
-      userSpeakingStatus.set(user.id, false);
-      await message.reply(`${user.username} ile konuşma kapatıldı.`);
-      return;
+      userSpeakingStatus.set(mentionedUser.id, false);
+      await message.reply(`${mentionedUser.username} artık konuşamıyor.`);
+    } else if (contentLower.includes("ile konuş")) {
+      userSpeakingStatus.set(mentionedUser.id, true);
+      await message.reply(`${mentionedUser.username} artık konuşabilir.`);
     }
-    if (contentLower.includes("ile konuş")) {
-      const user = message.mentions.users.first();
-      if (!user) {
-        await message.reply("Bir kullanıcı etiketle.");
-        return;
-      }
-      userSpeakingStatus.set(user.id, true);
-      await message.reply(`${user.username} ile konuşma açıldı.`);
-      return;
-    }
-
-    // konuşma durumu
-    if (contentLower.includes("konuşma durumu")) {
-      const kapaliKullanicilar = [];
-      for (const [uid, status] of userSpeakingStatus.entries()) {
-        if (!status) kapaliKullanicilar.push(`<@${uid}>`);
-      }
-      const liste = kapaliKullanicilar.length ? kapaliKullanicilar.join(", ") : "Yok";
-      await message.reply(`Genel konuşma durumu: **${globalSpeakingStatus ? "Açık" : "Kapalı"}**\nKonuşması kapalı kullanıcılar: ${liste}`);
-      return;
-    }
-
-    // kullanıcıları listele (konuşması kapalı)
-    if (contentLower.includes("kullanıcılar")) {
-      const kapaliKullanicilar = [];
-      for (const [uid, status] of userSpeakingStatus.entries()) {
-        if (!status) kapaliKullanicilar.push(`<@${uid}>`);
-      }
-      const liste = kapaliKullanicilar.length ? kapaliKullanicilar.join("\n") : "Hiçbiri";
-      await message.reply(`Konuşması kapalı kullanıcılar:\n${liste}`);
-      return;
-    }
-
-    // reset komutu
-    if (contentLower.startsWith("canavar reset")) {
-      const user = message.mentions.users.first();
-      if (!user) {
-        await message.reply("Bir kullanıcı etiketle.");
-        return;
-      }
-      userHistories.delete(user.id);
-      userSpeakingStatus.set(user.id, true);
-      userCustomNames.delete(user.id);
-      await message.reply(`${user.username} için geçmiş sıfırlandı ve konuşma açıldı.`);
-      return;
-    }
-
-    // setisim komutu
-    if (contentLower.startsWith("canavar setisim")) {
-      const user = message.mentions.users.first();
-      if (!user) {
-        await message.reply("Bir kullanıcı etiketle.");
-        return;
-      }
-      const args = message.content.split(" ").slice(3);
-      if (args.length < 1) {
-        await message.reply("Yeni isim belirtmelisin.");
-        return;
-      }
-      const yeniIsim = args.join(" ");
-      userCustomNames.set(user.id, yeniIsim);
-      await message.reply(`${user.username} için yeni isim olarak "${yeniIsim}" ayarlandı.`);
-      return;
-    }
-
-    // isim sıfırla
-    if (contentLower.startsWith("canavar isim sıfırla")) {
-      const user = message.mentions.users.first();
-      if (!user) {
-        await message.reply("Bir kullanıcı etiketle.");
-        return;
-      }
-      userCustomNames.delete(user.id);
-      await message.reply(`${user.username} için özel isim sıfırlandı.`);
-      return;
-    }
+    return;
   }
 
-  // Eğer mesaj botu etiketliyorsa veya direkt DM ise cevap ver
-  const botMentioned = message.mentions.has(client.user);
-  if (botMentioned || message.channel.type === 1) {
+  // Owner komutları listesi - cv komutu
+  if (contentLower === "cv") {
+    if (message.author.id !== OWNER_ID) {
+      await message.reply("Sen kimsin ya? Bunu yapamazsın.");
+      return;
+    }
+    await message.reply(
+      "**Canavar Owner Komutları:**\n" +
+        "- `canavar konuşmayı kapat` : Botun genel sohbetini kapatır.\n" +
+        "- `canavar konuşmayı aç` : Botun genel sohbetini açar.\n" +
+        "- `canavar @kullanıcı ile konuşma` : Belirtilen kullanıcıyla konuşmayı kapatır.\n" +
+        "- `canavar @kullanıcı ile konuş` : Belirtilen kullanıcıyla konuşmayı açar.\n" +
+        "- `canavar nuke [#kanal]` : Belirtilen veya mevcut kanalı temizler. (Yetkili rolü olanlar)\n" +
+        "- `cv` : Bu komut listesini gösterir."
+    );
+    return;
+  }
+
+  // Nuke komutu (OWNER DEĞİL, ROL KONTROLÜ)
+  if (contentLower.startsWith("canavar nuke")) {
+    // Yetki kontrolü: mesaj sahibinin rolü NUKE_ROLE_ID var mı?
+    const member = message.member;
+    if (!member.roles.cache.has(NUKE_ROLE_ID)) {
+      await message.reply("Geçersiz yetki.");
+      return;
+    }
+
+    let channelToNuke = message.mentions.channels.first() || message.channel;
+
+    try {
+      // Kanalın ayarlarını alıyoruz
+      const channelData = {
+        name: channelToNuke.name,
+        type: channelToNuke.type,
+        topic: channelToNuke.topic,
+        nsfw: channelToNuke.nsfw,
+        rateLimitPerUser: channelToNuke.rateLimitPerUser,
+        parent: channelToNuke.parent,
+        permissionOverwrites: channelToNuke.permissionOverwrites.cache.map((po) => ({
+          id: po.id,
+          type: po.type,
+          allow: po.allow.bitfield,
+          deny: po.deny.bitfield,
+        })),
+      };
+
+      // Kanalı klonla
+      const newChannel = await channelToNuke.clone({
+        reason: `Nuke işlemi @${message.author.tag} tarafından yapıldı.`,
+      });
+
+      // Eski kanalı sil
+      await channelToNuke.delete("Nuke işlemi");
+
+      // Yeni kanala bilgilendirme mesajı gönder
+      await newChannel.send(
+        `📢 Kanal @${message.author.tag} tarafından temizlendi. Temiz, optimize ve hazır!`
+      );
+    } catch (error) {
+      console.error("Nuke hatası:", error);
+      await message.reply("Kanal temizlenirken bir hata oluştu.");
+    }
+    return;
+  }
+
+  // Eğer genel konuşma kapalıysa veya kullanıcı konuşması kapalıysa cevap verme
+  if (!globalSpeakingStatus) return;
+  if (userSpeakingStatus.has(message.author.id) && userSpeakingStatus.get(message.author.id) === false) return;
+
+  // Mesaj canavar ismi içeriyorsa veya bot etiketlendiyse cevap ver
+  const isMentioningBotName = contentLower.includes("canavar");
+  const isBotMentioned = message.mentions.has(client.user);
+
+  // Sadece bot ismi geçtiyse, owner olmayanlar komut denemiyorsa normal sohbet, yetki yok mesajı verme
+  // Ama owner komutlarında yetki yok mesajı zaten veriliyor.
+
+  if (isMentioningBotName || isBotMentioned) {
+    // Bu durumda doğrudan handleMessage çağrılır.
     await handleMessage(message);
+  }
+
+  // Bot etiketlenince emoji reaksiyonu ekle (sadece 1 kere)
+  if (isBotMentioned && !reactedMessages.has(message.id)) {
+    try {
+      await message.react("👀");
+      reactedMessages.add(message.id);
+    } catch (error) {
+      console.error("Emoji reaksiyonu eklenirken hata:", error);
+    }
   }
 });
 
