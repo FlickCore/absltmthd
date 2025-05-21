@@ -106,12 +106,17 @@ ${isPositiveUser ? "Bu kullanıcıya daha pozitif, içten ve arkadaşça cevapla
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot) return;
 
-  const contentLower = message.content.toLowerCase();
+  // Bot mention olup olmadığını kontrol et
+  const isMention = message.mentions.has(client.user);
+  if (!isMention) return;
+
+  // Mesajdan bot mention’ını çıkar ve kalan kısmı al (küçük harfe çevir)
+  const withoutMention = message.content.replace(/<@!?\d+>/g, '').trim().toLowerCase();
 
   // Özel cevap: neden konuşmuyorsun
   if (
     userSpeakingStatus.get(message.author.id) === false &&
-    (contentLower.includes("neden konuşmuyorsun") || contentLower.includes("niye konuşmuyorsun"))
+    (withoutMention.includes("neden konuşmuyorsun") || withoutMention.includes("niye konuşmuyorsun"))
   ) {
     await message.reply("Yapımcım seninle konuşmamı kısıtladı.");
     return;
@@ -123,12 +128,8 @@ client.on(Events.MessageCreate, async (message) => {
   // Kişisel konuşma kapalıysa engelle
   if (userSpeakingStatus.get(message.author.id) === false) return;
 
-  // Sadece mentionla cevap ver
-  const isMention = message.mentions.has(client.user);
-  if (!isMention) return;
-
   // Komutlar
-  if (contentLower === "c.nuke") {
+  if (withoutMention === "c.nuke") {
     if (!message.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
       return message.reply("Bu komutu kullanmak için 'Kanalları Yönet' yetkisine sahip olmalısın.");
     }
@@ -140,12 +141,12 @@ client.on(Events.MessageCreate, async (message) => {
     return;
   }
 
-  if (contentLower === "cv.h") {
+  if (withoutMention === "cv.h") {
     if (message.author.id !== OWNER_ID) {
       return message.reply("Sen kimsin ya? Bu komutlar sadece yapımcıya özel.");
     }
 
-return message.reply(`
+    return message.reply(`
 **Yapımcı Komutları**
 - \`canavar konuşmayı kapat\`
 - \`canavar konuşmayı aç\`
@@ -156,29 +157,29 @@ return message.reply(`
   }
 
   // Owner özel komutları
-  if (message.content.startsWith("canavar")) {
+  if (withoutMention.startsWith("canavar")) {
     if (message.author.id !== OWNER_ID) {
       return message.reply("Sen kimsin ya? Bu komutları kullanamazsın.");
     }
 
-    if (contentLower === "canavar konuşmayı kapat") {
+    if (withoutMention === "canavar konuşmayı kapat") {
       globalSpeakingStatus = false;
       return message.reply("Botun genel konuşması kapatıldı.");
     }
 
-    if (contentLower === "canavar konuşmayı aç") {
+    if (withoutMention === "canavar konuşmayı aç") {
       globalSpeakingStatus = true;
       return message.reply("Botun genel konuşması açıldı.");
     }
 
     const mentionedUser = message.mentions.users.first();
     if (mentionedUser) {
-      if (contentLower.includes("ile konuşma")) {
+      if (withoutMention.includes("ile konuşma")) {
         userSpeakingStatus.set(mentionedUser.id, false);
         return message.reply(`${mentionedUser.username} artık konuşamıyor.`);
       }
 
-      if (contentLower.includes("ile konuş")) {
+      if (withoutMention.includes("ile konuş")) {
         userSpeakingStatus.set(mentionedUser.id, true);
         return message.reply(`${mentionedUser.username} artık konuşabilir.`);
       }
@@ -198,6 +199,7 @@ return message.reply(`
     }
   }
 });
+
 import http from "http";
 
 const port = process.env.PORT || 3000;
