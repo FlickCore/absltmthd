@@ -1,19 +1,17 @@
 {
-    "name": "ares-ai",
-    "version": "1.0.0",
-    "description": "",
-    "main": "index.js",
-    "type": "module",
-    "scripts": {
-        "start": "node ."
-    },
-    "dependencies": {
-        "discord.js": "^14.0.0",
-        "dotenv": "^16.0.0",
-        "node-fetch": "^3.3.2"
-    }
-}
-{
+  "name": "canavar-bot",
+  "version": "1.0.0",
   "type": "module",
-  ...
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": "18.x"
+  },
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.4.5",
+    "node-fetch": "^3.3.2"
+  }
 }
