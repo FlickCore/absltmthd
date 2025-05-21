@@ -16,6 +16,7 @@ const client = new Client({
 
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const token = process.env.TOKEN;
+const OWNER_ID = process.env.OWNER_ID;
 
 const userHistories = new Map();
 const userNames = new Map();
@@ -38,9 +39,7 @@ function rotateStatus() {
   client.user.setActivity(statusMessages[statusIndex], { type: 0 });
   statusIndex = (statusIndex + 1) % statusMessages.length;
 }
-setInterval(() => {
-  rotateStatus();
-}, 7000);
+setInterval(rotateStatus, 7000);
 
 client.once(Events.ClientReady, () => {
   console.log(`${client.user.tag} başarıyla aktif!`);
@@ -48,41 +47,29 @@ client.once(Events.ClientReady, () => {
 });
 
 async function handleMessage(message) {
-  if (message.author.bot || !message.guild) return;
-  if (respondedMessages.has(message.id)) return;
-
   const userId = message.author.id;
   const userName = message.member?.nickname || message.author.username;
-
-  if (!globalSpeakingStatus) return;
-
-  if (userSpeakingStatus.has(userId) && userSpeakingStatus.get(userId) === false) return;
 
   if (!userHistories.has(userId)) userHistories.set(userId, []);
   if (!userNames.has(userId)) userNames.set(userId, userName);
 
   const history = userHistories.get(userId);
   history.push({ role: "user", content: message.content });
-
   if (history.length > 1) history.shift();
 
-  const customSystemPrompt = `
-Sen Canavar adında bir Discord botusun. Kısa, net ve samimi cevaplar verirsin. Fazla emoji kullanmazsın, sadece gerektiğinde kullanırsın.
+  const isPositiveUser = ["882686730942165052", "1025509185544265838"].includes(userId);
 
-Konuşurken rahat olursun ama aşırı samimiyetten çekinirsin. Gerektiğinde kullanıcının gerçek adını kullanabilirsin ama gereksiz yere kullanmazsın.
+  const customSystemPrompt = `
+Sen Canavar adında bir Discord botusun. Kısa, net ve samimi cevaplar verirsin. Gereksiz emoji kullanmazsın.
 
 Kurallar:
-- Cümleleri kısa ve net kur.
-- Gereksiz emoji ve laf kalabalığından kaçın.
 - Türkçeyi düzgün kullan, İngilizce karıştırma.
-- "Valorant'ın en iyi oyuncusu kim?" sorusuna kesin cevap ver: "Sensin tabii ki, ${userName}."
-- "Yapımcın kim?" veya "Rabbin kim?" sorulursa şu cevabı ver: "Tabii ki <@${process.env.OWNER_ID}>." 😎
-- Owner dışındaki kullanıcılar botun ayar komutlarını kullanmaya kalkarsa, onlara "Sen kimsin ya? Bunu yapamazsın." de.
-- Sana gelen sorulara sadece soruyla ilgili cevap ver, gereksiz eklemeler yapma.
-- Samimi, eğlenceli ama asla kaba olmayan bir tonda ol.
-- Bazen hafif espri, bazen tatlı laf sokabilirsin ama sınırı aşma.
+- Laf kalabalığından ve boş cümlelerden kaçın.
+- Sadece konuya odaklan ve ciddi ama cana yakın cevap ver.
+- "Valorant'ın en iyi oyuncusu kim?" sorusuna: "Sensin tabii ki, ${userName}." de.
+- "Yapımcın kim?" gibi sorulara: "Tabii ki <@${OWNER_ID}>." 😎
 
-Hadi Canavar, şimdi cevap ver!
+${isPositiveUser ? "Bu kullanıcıya daha pozitif, içten ve arkadaşça cevaplar ver." : ""}
 `;
 
   const groqMessages = [
@@ -92,7 +79,6 @@ Hadi Canavar, şimdi cevap ver!
 
   try {
     await message.channel.sendTyping();
-
     const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -106,17 +92,14 @@ Hadi Canavar, şimdi cevap ver!
     });
 
     const data = await response.json();
-    console.log("Groq cevabı:", JSON.stringify(data, null, 2));
-
     let replyText = data.choices?.[0]?.message?.content ?? "**Şu an cevap veremiyorum.**";
     replyText = replyText.replace(/\*{1}(.*?)\*{1}/g, "**$1**");
-
     await message.reply(replyText);
 
     respondedMessages.add(message.id);
   } catch (err) {
-    console.error("Groq AI Hatası:", err);
-    await message.reply("Bir hata oluştu, canavar cevap veremedi.");
+    console.error("Groq Hatası:", err);
+    await message.reply("Bir hata oluştu, cevap veremiyorum.");
   }
 }
 
@@ -125,98 +108,93 @@ client.on(Events.MessageCreate, async (message) => {
 
   const contentLower = message.content.toLowerCase();
 
-  // Genel konuşma açma/kapama komutları (owner)
-  if (contentLower === "canavar konuşmayı kapat") {
-    if (message.author.id !== process.env.OWNER_ID) {
-      await message.reply("Sen kimsin ya? Bunu yapamazsın.");
-      return;
-    }
-    globalSpeakingStatus = false;
-    await message.reply("Botun genel konuşması kapatıldı.");
-    return;
-  }
-  if (contentLower === "canavar konuşmayı aç") {
-    if (message.author.id !== process.env.OWNER_ID) {
-      await message.reply("Sen kimsin ya? Bunu yapamazsın.");
-      return;
-    }
-    globalSpeakingStatus = true;
-    await message.reply("Botun genel konuşması açıldı.");
+  // Özel cevap: neden konuşmuyorsun
+  if (
+    userSpeakingStatus.get(message.author.id) === false &&
+    (contentLower.includes("neden konuşmuyorsun") || contentLower.includes("niye konuşmuyorsun"))
+  ) {
+    await message.reply("Yapımcım seninle konuşmamı kısıtladı.");
     return;
   }
 
-  // Bireysel kullanıcı konuşma açma/kapatma (owner)
-  if (contentLower.startsWith("canavar") && (contentLower.includes("ile konuşma") || contentLower.includes("ile konuş"))) {
-    if (message.author.id !== process.env.OWNER_ID) {
-      await message.reply("Sen kimsin ya? Bunu yapamazsın.");
-      return;
+  // Global konuşma açık değilse engelle
+  if (!globalSpeakingStatus) return;
+
+  // Kişisel konuşma kapalıysa engelle
+  if (userSpeakingStatus.get(message.author.id) === false) return;
+
+  // Sadece mentionla cevap ver
+  const isMention = message.mentions.has(client.user);
+  if (!isMention) return;
+
+  // Komutlar
+  if (contentLower === "c.nuke") {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
+      return message.reply("Bu komutu kullanmak için 'Kanalları Yönet' yetkisine sahip olmalısın.");
+    }
+
+    const channel = message.channel;
+    const clone = await channel.clone();
+    await channel.delete();
+    await clone.send(`Kanal ${message.author} tarafından temizlendi. Geçerli optimizasyonlar uygulandı.`);
+    return;
+  }
+
+  if (contentLower === "cv.h") {
+    if (message.author.id !== OWNER_ID) {
+      return message.reply("Sen kimsin ya? Bu komutlar sadece yapımcıya özel.");
+    }
+
+    return message.reply(`
+**Yapımcı Komutları**
+- `canavar konuşmayı kapat`
+- `canavar konuşmayı aç`
+- `canavar @kullanıcı ile konuşma`
+- `canavar @kullanıcı ile konuş`
+- \`c.nuke\` (yetkililere açık)
+    `);
+  }
+
+  // Owner özel komutları
+  if (message.content.startsWith("canavar")) {
+    if (message.author.id !== OWNER_ID) {
+      return message.reply("Sen kimsin ya? Bu komutları kullanamazsın.");
+    }
+
+    if (contentLower === "canavar konuşmayı kapat") {
+      globalSpeakingStatus = false;
+      return message.reply("Botun genel konuşması kapatıldı.");
+    }
+
+    if (contentLower === "canavar konuşmayı aç") {
+      globalSpeakingStatus = true;
+      return message.reply("Botun genel konuşması açıldı.");
     }
 
     const mentionedUser = message.mentions.users.first();
-    if (!mentionedUser) {
-      await message.reply("Bir kullanıcıyı etiketlemen gerekiyor.");
-      return;
-    }
+    if (mentionedUser) {
+      if (contentLower.includes("ile konuşma")) {
+        userSpeakingStatus.set(mentionedUser.id, false);
+        return message.reply(`${mentionedUser.username} artık konuşamıyor.`);
+      }
 
-    if (contentLower.includes("ile konuşma")) {
-      userSpeakingStatus.set(mentionedUser.id, false);
-      await message.reply(`${mentionedUser.username} artık konuşamıyor.`);
-    } else if (contentLower.includes("ile konuş")) {
-      userSpeakingStatus.set(mentionedUser.id, true);
-      await message.reply(`${mentionedUser.username} artık konuşabilir.`);
+      if (contentLower.includes("ile konuş")) {
+        userSpeakingStatus.set(mentionedUser.id, true);
+        return message.reply(`${mentionedUser.username} artık konuşabilir.`);
+      }
     }
-    return;
   }
 
-  // c.nuke komutu
-  if (contentLower.startsWith("c.nuke")) {
-    if (!message.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
-      await message.reply("Geçersiz yetki.");
-      return;
-    }
+  // Cevap ver
+  await handleMessage(message);
 
-    const channelToNuke = message.mentions.channels.first() || message.channel;
-
-    try {
-      const newChannel = await channelToNuke.clone({
-        reason: `Nuke işlemi @${message.author.tag} tarafından yapıldı.`,
-      });
-
-      await channelToNuke.delete("Nuke işlemi");
-
-      await newChannel.send(
-        `📢 Kanal @${message.author.tag} tarafından temizlendi. Temiz, optimize ve hazır!`
-      );
-    } catch (error) {
-      console.error("Nuke hatası:", error);
-      await message.reply("Kanal temizlenirken bir hata oluştu.");
-    }
-    return;
-  }
-
-  // Bot ile konuşma açık mı, kullanıcının konuşması açık mı?
-  if (!globalSpeakingStatus) return;
-  if (userSpeakingStatus.has(message.author.id) && userSpeakingStatus.get(message.author.id) === false) {
-    if (contentLower.includes("neden konuşmuyorsun") || contentLower.includes("niye konuşmuyorsun")) {
-      await message.reply("Yapımcım seninle konuşmamı kısıtladı.");
-    }
-    return;
-  }
-
-  const isMentioningBotName = contentLower.includes("canavar");
-  const isReplyingToBot = message.reference && (await message.channel.messages.fetch(message.reference.messageId)).author.id === client.user.id;
-
-  if (isMentioningBotName || isReplyingToBot) {
-    await handleMessage(message);
-  }
-
-  // Bot etiketlenince emoji reaksiyonu (sadece 1 kere)
-  if (message.mentions.has(client.user) && !reactedMessages.has(message.id)) {
+  // Emoji ekle
+  if (!reactedMessages.has(message.id)) {
     try {
       await message.react("👀");
       reactedMessages.add(message.id);
     } catch (error) {
-      console.error("Emoji reaksiyonu eklenirken hata:", error);
+      console.error("Emoji eklenemedi:", error);
     }
   }
 });
