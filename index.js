@@ -25,8 +25,20 @@ client.once(Events.ClientReady, () => {
 
 async function handleMessage(message) {
   if (message.author.bot || !message.guild) return;
+
   const contentLower = message.content.toLowerCase();
-  if (!contentLower.includes("canavar")) return;
+
+  // Mesajda "canavar" geçiyorsa veya
+  // Mesaj bir reply ise ve referans alınan mesaj botun mesajıysa devam et
+  const isMentioned = contentLower.includes("canavar");
+  const isReplyToBot = message.reference
+    && message.reference.messageId
+    && (await message.channel.messages.fetch(message.reference.messageId))
+         .author.id === client.user.id;
+
+  if (!isMentioned && !isReplyToBot) return;
+
+  // Aşağıdaki kısım aynen devam eder...
 
   const userId = message.author.id;
 
