@@ -21,7 +21,7 @@ const userNames = new Map();
 
 // Animasyonlu statusler
 const statusMessages = [
-  "Absolute 🔥"
+  "Absolute 🔥",
   "Absolute ♡ Canavar",
   "Canavar Görevde 😈",
   "Chat'e dalıyorum 😎"
