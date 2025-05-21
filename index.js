@@ -19,6 +19,11 @@ const token = process.env.TOKEN;
 
 const userHistories = new Map();
 const userNames = new Map();
+const userSpeakingStatus = new Map(); // Kullanıcı ID → true/false (konuşabilir mi)
+let globalSpeakingStatus = true; // Genel bot konuşma durumu (true=aktif, false=kapalı)
+
+const respondedMessages = new Set(); // Mesaj ID'si tekrar cevap vermemek için
+const reactedMessages = new Set(); // Reaksiyon eklenen mesajlar
 
 // Animasyonlu statusler
 const statusMessages = [
@@ -34,7 +39,6 @@ function rotateStatus() {
   client.user.setActivity(statusMessages[statusIndex], { type: 0 }); // 0 = Playing
   statusIndex = (statusIndex + 1) % statusMessages.length;
 }
-
 setInterval(() => {
   rotateStatus();
 }, 7000); // 7 saniyede bir değiştir
@@ -44,8 +48,6 @@ client.once(Events.ClientReady, () => {
   rotateStatus();
 });
 
-const respondedMessages = new Set(); // Mesaj ID'lerini tutacağız, tekrar cevap için
-
 async function handleMessage(message) {
   if (message.author.bot || !message.guild) return;
   if (respondedMessages.has(message.id)) return; // Aynı mesaja 2. kez cevap verme
@@ -53,33 +55,40 @@ async function handleMessage(message) {
   const userId = message.author.id;
   const userName = message.member?.nickname || message.author.username;
 
-  if (!userHistories.has(userId)) {
-    userHistories.set(userId, []);
+  // Genel konuşma kapalıysa cevap verme
+  if (!globalSpeakingStatus) return;
+
+  // Eğer kullanıcı konuşması kapalıysa cevap verme
+  if (userSpeakingStatus.has(userId) && userSpeakingStatus.get(userId) === false) {
+    return;
   }
-  if (!userNames.has(userId)) {
-    userNames.set(userId, userName);
-  }
+
+  if (!userHistories.has(userId)) userHistories.set(userId, []);
+  if (!userNames.has(userId)) userNames.set(userId, userName);
 
   const history = userHistories.get(userId);
   history.push({ role: "user", content: message.content });
 
-  if (history.length > 1) {
-    history.shift();
-  }
+  if (history.length > 1) history.shift();
 
-let customSystemPrompt = `Sen Canavar adında bir Discord botusun. Kısa, net ve ciddi samimi cevaplar verirsin. Fazla emoji kullanmazsın, sadece gerektiğinde kullanırsın.
+  const customSystemPrompt = `
+Sen Canavar adında bir Discord botusun. Kısa, net ve samimi cevaplar verirsin. Fazla emoji kullanmazsın, sadece gerektiğinde kullanırsın.
 
-Konuşurken rahat olursun ama aşırı samimimyetten çekinirsin . Gerektiğinde kullanıcının gerçek adını kullanabilirsin ama gereksiz yere kullanmazsın.
+Konuşurken rahat olursun ama aşırı samimiyetten çekinirsin. Gerektiğinde kullanıcının gerçek adını kullanabilirsin ama gereksiz yere kullanmazsın.
 
-Örnek kurallar:
+Kurallar:
 - Cümleleri kısa ve net kur.
 - Gereksiz emoji ve laf kalabalığından kaçın.
 - Türkçeyi düzgün kullan, İngilizce karıştırma.
-- "Valorant'ın en iyi oyuncusu kim?" sorusuna kesin cevap ver: "Sensin tabii ki,  ${userName}."
-- "Yapımcın kim? veya "Rabbin kim ?"  diye sorulursa, şu cevabı ver: "Tabii ki <@${process.env.OWNER_ID}>." :sunglasses:
-Sana gelen sorulara sadece soruyla ilgili cevap ver, gereksiz eklemeler yapma.
+- "Valorant'ın en iyi oyuncusu kim?" sorusuna kesin cevap ver: "Sensin tabii ki, ${userName}."
+- "Yapımcın kim?" veya "Rabbin kim?" sorulursa şu cevabı ver: "Tabii ki <@${process.env.OWNER_ID}>." 😎
+- Owner dışındaki kullanıcılar botun ayar komutlarını kullanmaya kalkarsa, onlara "Sen kimsin ya? Bunu yapamazsın." de.
+- Sana gelen sorulara sadece soruyla ilgili cevap ver, gereksiz eklemeler yapma.
+- Samimi, eğlenceli ama asla kaba olmayan bir tonda ol.
+- Bazen hafif espri, bazen tatlı laf sokabilirsin ama sınırı aşma.
 
-Hadi Canavar, şimdi cevap ver.`;
+Hadi Canavar, şimdi cevap ver!
+`;
 
   const groqMessages = [
     { role: "system", content: customSystemPrompt },
@@ -116,13 +125,58 @@ Hadi Canavar, şimdi cevap ver.`;
   }
 }
 
-// Bot etiketlenince reaksiyon ekle, ama sadece 1 kere
-const reactedMessages = new Set();
-
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot) return;
 
   const contentLower = message.content.toLowerCase();
+
+  // Owner kontrolü ile genel konuşma açma/kapama
+  if (contentLower === "canavar konuşmayı kapat") {
+    if (message.author.id !== process.env.OWNER_ID) {
+      await message.reply("Sen kimsin ya? Bunu yapamazsın.");
+      return;
+    }
+    globalSpeakingStatus = false;
+    await message.reply("Botun genel konuşması kapatıldı.");
+    return;
+  }
+  if (contentLower === "canavar konuşmayı aç") {
+    if (message.author.id !== process.env.OWNER_ID) {
+      await message.reply("Sen kimsin ya? Bunu yapamazsın.");
+      return;
+    }
+    globalSpeakingStatus = true;
+    await message.reply("Botun genel konuşması açıldı.");
+    return;
+  }
+
+  // Owner kontrolü ile bireysel kullanıcı konuşma açma/kapatma komutları
+  if (contentLower.startsWith("canavar") && (contentLower.includes("ile konuşma") || contentLower.includes("ile konuş"))) {
+    if (message.author.id !== process.env.OWNER_ID) {
+      await message.reply("Sen kimsin ya? Bunu yapamazsın.");
+      return;
+    }
+
+    const mentionedUser = message.mentions.users.first();
+    if (!mentionedUser) {
+      await message.reply("Bir kullanıcıyı etiketlemen gerekiyor.");
+      return;
+    }
+
+    if (contentLower.includes("ile konuşma")) {
+      userSpeakingStatus.set(mentionedUser.id, false);
+      await message.reply(`${mentionedUser.username} artık konuşamıyor.`);
+    } else if (contentLower.includes("ile konuş")) {
+      userSpeakingStatus.set(mentionedUser.id, true);
+      await message.reply(`${mentionedUser.username} artık konuşabilir.`);
+    }
+    return;
+  }
+
+  // Eğer genel konuşma kapalıysa veya kullanıcı konuşması kapalıysa cevap verme
+  if (!globalSpeakingStatus) return;
+  if (userSpeakingStatus.has(message.author.id) && userSpeakingStatus.get(message.author.id) === false) return;
+
   const isMentioningBotName = contentLower.includes("canavar");
 
   const isReplyingToBot = message.reference && (
@@ -133,7 +187,7 @@ client.on(Events.MessageCreate, async (message) => {
     await handleMessage(message);
   }
 
-  // Eğer mesaj botu etiketliyorsa emoji reaksiyonu ekle
+  // Bot etiketlenince emoji reaksiyonu ekle (sadece 1 kere)
   if (message.mentions.has(client.user) && !reactedMessages.has(message.id)) {
     try {
       await message.react("👀");
