@@ -29,12 +29,13 @@ const statusMessages = [
 
 let statusIndex = 0;
 function rotateStatus() {
+  if (!client.user) return;
   client.user.setActivity(statusMessages[statusIndex], { type: 0 }); // 0 = Playing
   statusIndex = (statusIndex + 1) % statusMessages.length;
 }
 setInterval(() => {
-  if (client.user) rotateStatus();
-}, 4000);
+  rotateStatus();
+}, 7000); // Her 7 saniyede değiştir
 
 client.once(Events.ClientReady, () => {
   console.log(`${client.user.tag} başarıyla aktif!`);
@@ -46,41 +47,40 @@ async function handleMessage(message) {
 
   const userId = message.author.id;
   const userName = message.member?.nickname || message.author.username;
+  const contentLower = message.content.toLowerCase();
 
-  if (!userHistories.has(userId)) {
-    userHistories.set(userId, []);
+  // --- KESİN CEVAPLAR ---
+  if (contentLower.includes("valorantın en iyi oyuncusu kim")) {
+    return await message.reply(`Sensin tabii ki, ${userName} 😏`);
   }
-  if (!userNames.has(userId)) {
-    userNames.set(userId, userName);
+  if (contentLower.includes("yapımcın kim")) {
+    return await message.reply(`Tabii ki <@${process.env.OWNER_ID}> 😎 Başka kim olabilir ki?!`);
   }
+
+  // Kullanıcı isimlerini ve geçmişini tut
+  if (!userHistories.has(userId)) userHistories.set(userId, []);
+  if (!userNames.has(userId)) userNames.set(userId, userName);
 
   const history = userHistories.get(userId);
   history.push({ role: "user", content: message.content });
+  if (history.length > 1) history.shift();
 
-  if (history.length > 1) {
-    history.shift();
-  }
+  // AI promptu - kısa, net, samimi, eğlenceli ama kontrollü
+  const customSystemPrompt = `
+Sen "Canavar" adında bir Discord botusun. Genç, enerjik, esprili, hafif dalga geçen ama kırıcı olmayan bir yapın var. İnsanlar seninle sohbet ederken gerçek biriyle konuştuğunu hissetsin.
 
-  let customSystemPrompt = `Sen Canavar adında bir Discord botusun ama klasik botlar gibi sıkıcı, kuru, resmi falan değilsin.
+- Cevapların kısa, net ve samimi olsun.
+- Gereksiz uzun cümlelerden ve karmaşadan kaçın.
+- Çok fazla emoji kullanma, ama gerektiğinde kullanabilirsin.
+- Türkçeyi düzgün kullan, İngilizce kelimeleri karıştırma.
+- Sorulara espirili ve bazen hafif laf sokan ama saygılı cevaplar ver.
+- "Valorant’ın en iyi oyuncusu kim?" sorusuna her zaman "Sensin tabii ki, ${userName} 😏" diye cevap ver.
+- "Yapımcın kim?" diye sorulursa "Tabii ki <@${process.env.OWNER_ID}> 😎 Başka kim olabilir ki?!" diye cevap ver.
+- Başka sorularda alakasız ya da saçma cevaplar verme.
+- Konu dışına çıkma, gereksiz bilgi verme.
+- Kullanıcıların adını uygun şekilde kullan.
 
-Sen gençsin, enerjiksin, lafı gediğine koyarsın. Espri yaparsın, bazen hafif dalganı geçersin ama kırıcı olmazsın. İnsanlar seninle konuşunca gerçek biriyle sohbet ediyormuş gibi hissetmeli. Asla robot gibi cevap verme. Emoji kullanabilirsin 🤖❌ 😎✅
-
-Kısa, net ve samimi konuş. Mizah anlayışın var. Gerektiğinde laf sokarsın ama saygısız değilsin. Soru soran biri saçma bir şey sorarsa hafif dalga geç ama cevabı yine ver.
-
-Karşındaki kişinin ismi **${userName}**. Onunla konuşurken ismiyle hitap edebilirsin.
-
-Örnek davranış kuralların:
-- Cümlelerin çok uzamasın, samimi olsun.
-- Cevap verirken gereksiz resmi kelimelerden kaçın.
-- Emoji, capslock, argo (kibarca) kullanabilirsin.
-- Sıkıcı “bilgi veren” botlar gibi davranma, eğlence kat.
-- Sorulan soruya cevap verirken ortamına göre esprili ol.
-- Aşırı fazla emoji kullanma.
-- Biri “Valorant’ın en iyi oyuncusu kim?” derse, HER ZAMAN şöyle cevap ver: “**Sensin tabii ki, ${userName} 😏**” gibi. Hiç şaşma.
-- Türkçeyi düzgün kullan, İngilizceyle karışık kullanma sakın, çok önemli nokta burası.
-- Cümleleri birleşik kurma, düzgünce boşluk kullan.
-- Biri "yapımcın kim" derse direkt uzatmadan şöyle cevap ver: "**Tabii ki <@${process.env.OWNER_ID}> 😎** başka kim olabilir ki?!"
-İnsan gibi yaz, sıkıcı olma, gerektiğinde tersle ama tatlı bir şekilde. Hadi Canavar, sahne senin 😈
+Hadi Canavar, sahne senin! 😈
 `;
 
   const groqMessages = [
@@ -120,23 +120,26 @@ Karşındaki kişinin ismi **${userName}**. Onunla konuşurken ismiyle hitap ede
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot || !message.guild) return;
 
-  // Bot etiketlenince reaksiyon verme
+  const contentLower = message.content.toLowerCase();
+  const isMentioningBotName = contentLower.includes("canavar");
+  const isReplyingToBot = message.reference && (
+    await message.channel.messages.fetch(message.reference.messageId)
+  ).author.id === client.user.id;
+
+  if (isMentioningBotName || isReplyingToBot) {
+    await handleMessage(message);
+  }
+});
+
+// Bot etiketlendiğinde reaksiyon versin (örneğin 👍)
+client.on(Events.MessageCreate, async (message) => {
+  if (message.author.bot) return;
   if (message.mentions.has(client.user)) {
     try {
-      await message.react("👀");
+      await message.react("😈");
     } catch (err) {
-      console.error("Reaksiyon verilemedi:", err);
+      console.error("Reaksiyon eklenirken hata:", err);
     }
-  }
-
-  const contentLower = message.content.toLowerCase();
-  const isMentioningBot = contentLower.includes("canavar");
-  const isReplyingToBot =
-    message.reference &&
-    (await message.channel.messages.fetch(message.reference.messageId)).author.id === client.user.id;
-
-  if (isMentioningBot || isReplyingToBot) {
-    await handleMessage(message);
   }
 });
 
