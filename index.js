@@ -1,9 +1,14 @@
 import { Client, GatewayIntentBits, Partials, Events, PermissionsBitField } from "discord.js";
-import { joinVoiceChannel } from "@discordjs/voice"; // Ses bağlantısı için
+import { joinVoiceChannel, createAudioPlayer, createAudioResource, entersState, VoiceConnectionStatus } from "@discordjs/voice";
 import fetch from "node-fetch";
 import dotenv from "dotenv";
 import http from "http";
+import path from "path";
+import { fileURLToPath } from "url";
 dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const client = new Client({
   intents: [
@@ -12,7 +17,7 @@ const client = new Client({
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.DirectMessages,
     GatewayIntentBits.GuildMessageReactions,
-    GatewayIntentBits.GuildVoiceStates // SES kanalına bağlanabilmek için gerekli
+    GatewayIntentBits.GuildVoiceStates
   ],
   partials: [Partials.Channel, Partials.Message, Partials.Reaction]
 });
@@ -46,11 +51,10 @@ function rotateStatus() {
 }
 setInterval(rotateStatus, 7000);
 
-client.once(Events.ClientReady, () => {
+client.once(Events.ClientReady, async () => {
   console.log(`${client.user.tag} başarıyla aktif!`);
   rotateStatus();
 
-  // ✅ BOTU SES KANALINA SOK
   const guild = client.guilds.cache.get(GUILD_ID);
   if (!guild) return console.error("Sunucu bulunamadı!");
 
@@ -58,32 +62,35 @@ client.once(Events.ClientReady, () => {
   if (!channel || channel.type !== 2) return console.error("Ses kanalı bulunamadı veya geçersiz!");
 
   try {
-    joinVoiceChannel({
+    const connection = joinVoiceChannel({
       channelId: VOICE_CHANNEL_ID,
       guildId: GUILD_ID,
       adapterCreator: guild.voiceAdapterCreator,
       selfDeaf: false
     });
-    console.log("Bot başarıyla ses kanalına katıldı.");
+
+    const resource = createAudioResource(path.join(__dirname, "canavar-geldi.mp3"));
+    const player = createAudioPlayer();
+    connection.subscribe(player);
+    await entersState(connection, VoiceConnectionStatus.Ready, 30_000);
+    player.play(resource);
+
+    console.log("Bot başarıyla ses kanalına katıldı ve ses çaldı.");
   } catch (error) {
     console.error("Ses kanalına katılırken hata oluştu:", error);
   }
 });
 
-// ==== HANDLE MESSAGE ====
 async function handleMessage(message) {
   const userId = message.author.id;
   const userName = message.member?.nickname || message.author.username;
-
   if (!userHistories.has(userId)) userHistories.set(userId, []);
   if (!userNames.has(userId)) userNames.set(userId, userName);
-
   const history = userHistories.get(userId);
   history.push({ role: "user", content: message.content });
   if (history.length > 1) history.shift();
 
   const isPositiveUser = ["882686730942165052", "1025509185544265838"].includes(userId);
-
   const customSystemPrompt = `
 Sen Canavar adında bir Discord botusun. Kısa, net ve samimi cevaplar verirsin. Gereksiz emoji kullanmazsın.
 Kurallar:
@@ -93,7 +100,7 @@ Kurallar:
 - "Valorant'ın en iyi oyuncusu kim?" sorusuna: "Sensin tabii ki, ${userName}." de.
 - "Yapımcın kim?" gibi sorulara: "Tabii ki <@${OWNER_ID}>." 😎
 ${isPositiveUser ? "Bu kullanıcıya daha pozitif, içten ve arkadaşça cevaplar ver." : ""}
-  `;
+`;
 
   const groqMessages = [
     { role: "system", content: customSystemPrompt },
@@ -109,7 +116,7 @@ ${isPositiveUser ? "Bu kullanıcıya daha pozitif, içten ve arkadaşça cevapla
         "Authorization": `Bearer ${GROQ_API_KEY}`
       },
       body: JSON.stringify({
-        model: "llama-3.3-70b-versatile",
+        model: "llama3-70b-8192",
         messages: groqMessages
       })
     });
@@ -118,7 +125,6 @@ ${isPositiveUser ? "Bu kullanıcıya daha pozitif, içten ve arkadaşça cevapla
     let replyText = data.choices?.[0]?.message?.content ?? "**Şu an cevap veremiyorum.**";
     replyText = replyText.replace(/\*{1}(.*?)\*{1}/g, "**$1**");
     await message.reply(replyText);
-
     respondedMessages.add(message.id);
   } catch (err) {
     console.error("Groq Hatası:", err);
@@ -126,7 +132,6 @@ ${isPositiveUser ? "Bu kullanıcıya daha pozitif, içten ve arkadaşça cevapla
   }
 }
 
-// ==== KOMUTLARI ÇALIŞTIR ====
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot) return;
 
@@ -135,21 +140,17 @@ client.on(Events.MessageCreate, async (message) => {
 
   const withoutMention = message.content.replace(/<@!?(\d+)>/g, "").trim().toLowerCase();
 
-  if (
-    userSpeakingStatus.get(message.author.id) === false &&
-    (withoutMention.includes("neden konuşmuyorsun") || withoutMention.includes("niye konuşmuyorsun"))
-  ) {
+  if (userSpeakingStatus.get(message.author.id) === false &&
+      (withoutMention.includes("neden konuşmuyorsun") || withoutMention.includes("niye konuşmuyorsun"))) {
     return message.reply("Yapımcım seninle konuşmamı kısıtladı.");
   }
 
-  if (!globalSpeakingStatus) return;
-  if (userSpeakingStatus.get(message.author.id) === false) return;
+  if (!globalSpeakingStatus || userSpeakingStatus.get(message.author.id) === false) return;
 
   if (withoutMention === "c.nuke") {
     if (!message.member || !message.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
       return message.reply("Bu komutu kullanmak için 'Kanalları Yönet' yetkisine sahip olmalısın.");
     }
-
     const channel = message.channel;
     const clone = await channel.clone();
     await channel.delete();
@@ -160,7 +161,6 @@ client.on(Events.MessageCreate, async (message) => {
     if (message.author.id !== OWNER_ID) {
       return message.reply("Sen kimsin ya? Bu komutlar sadece yapımcıya özel.");
     }
-
     return message.reply(`
 **Yapımcı Komutları**
 - \`canavar konuşmayı kapat\`
@@ -168,19 +168,17 @@ client.on(Events.MessageCreate, async (message) => {
 - \`canavar @kullanıcı ile konuşma\`
 - \`canavar @kullanıcı ile konuş\`
 - \`c.nuke\` (yetkililere açık)
-`);
+    `);
   }
 
   if (withoutMention.startsWith("canavar")) {
     if (message.author.id !== OWNER_ID) {
       return message.reply("Sen kimsin ya? Bu komutları kullanamazsın.");
     }
-
     if (withoutMention.includes("konuşmayı kapat")) {
       globalSpeakingStatus = false;
       return message.reply("Botun genel konuşması kapatıldı.");
     }
-
     if (withoutMention.includes("konuşmayı aç")) {
       globalSpeakingStatus = true;
       return message.reply("Botun genel konuşması açıldı.");
@@ -192,7 +190,6 @@ client.on(Events.MessageCreate, async (message) => {
         userSpeakingStatus.set(mentionedUser.id, false);
         return message.reply(`${mentionedUser.username} artık konuşamıyor.`);
       }
-
       if (withoutMention.includes("ile konuş")) {
         userSpeakingStatus.set(mentionedUser.id, true);
         return message.reply(`${mentionedUser.username} artık konuşabilir.`);
@@ -212,7 +209,7 @@ client.on(Events.MessageCreate, async (message) => {
   }
 });
 
-// ==== RENDER.COM UYANIK TUTMA ====
+// Render.com canlı tutma
 const port = process.env.PORT || 3000;
 http.createServer((req, res) => {
   res.writeHead(200);
