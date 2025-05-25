@@ -246,16 +246,28 @@ ${isPositiveUser ? "Bu kullanıcıya daha pozitif, içten ve arkadaşça cevapla
 
   // Komutlar:
 
-  if (command === "nuke") {
-    if (!isAdmin) return message.reply("Bu komutu kullanmak için yönetici olmalısın.");
-    const count = parseInt(args[0]) || 50;
-    try {
-      const messages = await message.channel.messages.fetch({ limit: count });
-      await message.channel.bulkDelete(messages, true);
-      message.channel.send(`${messages.size} mesaj silindi.`).then(m => setTimeout(() => m.delete().catch(() => {}), 5000));
-    } catch (err) {
-      message.reply("Mesajlar silinirken hata oluştu.");
+else if (command === 'nuke') {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+        return message.reply("Bu komutu kullanmak için `Yönetici` yetkisine sahip olmalısın.");
     }
+
+    const channel = message.channel;
+
+    const position = channel.position;
+    const newChannel = await channel.clone();
+    await channel.delete();
+    newChannel.setPosition(position);
+
+    newChannel.send({
+        embeds: [
+            new EmbedBuilder()
+                .setTitle("💣 Kanal Patlatıldı!")
+                .setDescription(`Bu kanal ${message.author} tarafından patlatıldı.`)
+                .setColor("Red")
+                .setFooter({ text: "Canavar Bot tarafından sunulmuştur." })
+        ]
+    });
+}
   } else if (command === "kick") {
     if (!isAdmin) return message.reply("Bu komutu kullanmak için yönetici olmalısın.");
     const user = message.mentions.members.first();
