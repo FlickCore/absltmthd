@@ -20,6 +20,7 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -85,7 +86,7 @@ client.once(Events.ClientReady, async () => {
   console.log(`${client.user.tag} başarıyla aktif!`);
   rotateStatus();
   if (process.env.VOICE_CHANNEL_ID) {
-    const guild = client.guilds.cache.get(GUILD_ID);
+    const guild = client.guilds.cache.get(process.env.GUILD_ID);
     if (guild) {
       const channel = guild.channels.cache.get(process.env.VOICE_CHANNEL_ID);
       if (channel && channel.type === ChannelType.GuildVoice) {
