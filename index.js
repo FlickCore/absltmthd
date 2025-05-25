@@ -537,4 +537,6 @@ if (cmd === "unban") {
 
 client.on("messageCreate", handleMessage);
 
-const token = process.env.TOKEN;
+client.login(process.env.TOKEN).catch(err => {
+  console.error("Bot giriş hatası:", err);
+});
