@@ -4,7 +4,6 @@ import { joinVoiceChannel, entersState, VoiceConnectionStatus } from "@discordjs
 import fetch from "node-fetch";
 import dotenv from "dotenv";
 import path from "path";
-import pkg from "discord.js";
 const { Client, GatewayIntentBits, Partials } = pkg;
 import dotenv from "dotenv";
 dotenv.config();
