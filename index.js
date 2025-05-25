@@ -4,11 +4,10 @@ import { joinVoiceChannel, entersState, VoiceConnectionStatus } from "@discordjs
 import fetch from "node-fetch";
 import dotenv from "dotenv";
 import path from "path";
-import { fileURLToPath } from "url";
+import pkg from "discord.js";
+const { Client, GatewayIntentBits, Partials } = pkg;
+import dotenv from "dotenv";
 dotenv.config();
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const client = new Client({
   intents: [
@@ -19,21 +18,10 @@ const client = new Client({
     GatewayIntentBits.GuildMessageReactions,
     GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildPresences // **Burayı ekledik**
   ],
   partials: [Partials.Channel, Partials.Message, Partials.Reaction, Partials.User]
 });
-
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
-const token = process.env.TOKEN;
-const OWNER_ID = process.env.OWNER_ID;
-const GUILD_ID = process.env.GUILD_ID;
-
-const userHistories = new Map();
-const userNames = new Map();
-
-const tagKapatSet = new Set(); // tag koruması kapalı olan kullanıcılar
-const mutedUsers = new Set(); // mute edilen kullanıcılar
-let chatLocked = false;
 
 const statusMessages = [
   "Absolute ♡ Canavar",
@@ -45,6 +33,20 @@ const statusMessages = [
   "; @shupeak",
   "; @kachowpeak"
 ];
+
+let statusIndex = 0;
+
+function rotateStatus() {
+  if (!client.user) return;
+  client.user.setActivity(statusMessages[statusIndex], { type: "STREAMING", url: "https://www.twitch.tv/absolute" });
+  statusIndex = (statusIndex + 1) % statusMessages.length;
+}
+
+client.on('ready', () => {
+  console.log(`${client.user.tag} hazır!`);
+  rotateStatus(); // İlk durumu hemen ayarla
+  setInterval(rotateStatus, 7000); // Döngüyü başlat
+});
 
 let statusIndex = 0;
 
