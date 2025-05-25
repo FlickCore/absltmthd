@@ -429,16 +429,15 @@ ${isPositiveUser ? "Bu kullanıcıya daha pozitif, içten ve arkadaşça cevapla
     return;
   }
 
-  if (cmd === "avatar") {
-    let user = message.mentions.users.first() || message.author;
-    const embed = new EmbedBuilder()
-      .setTitle(`${user.username} kullanıcısının avatarı`)
-      .setImage(user.displayAvatarURL({ dynamic: true, size: 1024 }))
-      .setColor("#00FFFF");
-    await message.channel.send({ embeds: [embed] });
-    return;
-  }
-
+if (cmd === "avatar") {
+  let user = message.mentions.users.first() || message.author;
+  const embed = new EmbedBuilder()
+    .setTitle(`${user.username} kullanıcısının avatarı`)
+    .setImage(user.displayAvatarURL({ dynamic: true, size: 1024 }))
+    .setColor("#00FFFF");
+  await message.channel.send({ embeds: [embed] });
+  return;
+}
   if (cmd === "reboot") {
     if (message.author.id !== OWNER_ID) return message.reply("Bu komutu sadece yapımcım kullanabilir.");
     await message.channel.send("Bot yeniden başlatılıyor...");
