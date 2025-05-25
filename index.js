@@ -48,7 +48,7 @@ const statusMessages = [
 let statusIndex = 0;
 function rotateStatus() {
   if (!client.user) return;
-  client.user.setActivity(statusMessages[statusIndex], { type: "STREAMING", url: "https://twitch.tv/absolute" });
+  client.user.setActivity(statusMessages[statusIndex], { type: "STREAMING", url: "https://www.twitch.tv/absolute" });
   statusIndex = (statusIndex + 1) % statusMessages.length;
 }
 setInterval(rotateStatus, 7000);
