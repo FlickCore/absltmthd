@@ -1,4 +1,5 @@
-import { Client, GatewayIntentBits, Partials, Events, PermissionsBitField, MessageEmbed } from "discord.js";
+import pkg from "discord.js";
+const { Client, GatewayIntentBits, Partials, Events, PermissionsBitField, EmbedBuilder } = pkg;
 import { joinVoiceChannel, entersState, VoiceConnectionStatus } from "@discordjs/voice";
 import fetch from "node-fetch";
 import dotenv from "dotenv";
