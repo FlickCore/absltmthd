@@ -245,32 +245,32 @@ ${isPositiveUser ? "Bu kullanıcıya daha pozitif, içten ve arkadaşça cevapla
   const isAdmin = message.member.permissions.has(PermissionsBitField.Flags.Administrator);
 
   // Komutlar:
-else if (command === 'nuke') {
-    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-        return message.reply("Bu komutu kullanmak için `Yönetici` yetkisine sahip olmalısın.");
-    }
+    else if (command === 'nuke') {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            return message.reply("Bu komutu kullanmak için `Yönetici` yetkisine sahip olmalısın.");
+        }
 
-    try {
-        const channel = message.channel;
-        const position = channel.position;
-        const newChannel = await channel.clone();
-        await channel.delete();
-        await newChannel.setPosition(position);
+        try {
+            const channel = message.channel;
+            const position = channel.position;
+            const newChannel = await channel.clone();
+            await channel.delete();
+            await newChannel.setPosition(position);
 
-        newChannel.send({
-            embeds: [
-                new EmbedBuilder()
-                    .setTitle("💣 Kanal Patlatıldı!")
-                    .setDescription(`Bu kanal ${message.author} tarafından patlatıldı.`)
-                    .setColor("Red")
-                    .setFooter({ text: "Canavar Bot tarafından sunulmuştur." })
-            ]
-        });
-    } catch (error) {
-        console.error("Nuke hatası:", error);
-        message.channel.send("❌ Kanal patlatılırken bir hata oluştu.");
+            newChannel.send({
+                embeds: [
+                    new EmbedBuilder()
+                        .setTitle("💣 Kanal Patlatıldı!")
+                        .setDescription(`Bu kanal ${message.author} tarafından patlatıldı.`)
+                        .setColor("Red")
+                        .setFooter({ text: "Canavar Bot tarafından sunulmuştur." })
+                ]
+            });
+        } catch (error) {
+            console.error("Nuke hatası:", error);
+            message.channel.send("❌ Kanal patlatılırken bir hata oluştu.");
+        }
     }
-}
  if (command === "kick") {
     if (!isAdmin) return message.reply("Bu komutu kullanmak için yönetici olmalısın.");
     const user = message.mentions.members.first();
