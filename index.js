@@ -140,13 +140,9 @@ client.on(Events.MessageCreate, async (message) => {
 
   const withoutMention = message.content.replace(/<@!?(\d+)>/g, "").trim().toLowerCase();
 
-  if (userSpeakingStatus.get(message.author.id) === false &&
-      (withoutMention.includes("neden konuşmuyorsun") || withoutMention.includes("niye konuşmuyorsun"))) {
-    return message.reply("Yapımcım seninle konuşmamı kısıtladı.");
-  }
+  // --- Öncelikli Komutlar (konuşma kapalı olsa bile çalışmalı) ---
 
-  if (!globalSpeakingStatus || userSpeakingStatus.get(message.author.id) === false) return;
-
+  // Komut: c.nuke
   if (withoutMention === "c.nuke") {
     if (!message.member || !message.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
       return message.reply("Bu komutu kullanmak için 'Kanalları Yönet' yetkisine sahip olmalısın.");
@@ -157,6 +153,7 @@ client.on(Events.MessageCreate, async (message) => {
     return clone.send(`Kanal ${message.author} tarafından temizlendi. Geçerli optimizasyonlar uygulandı.`);
   }
 
+  // Komut: cv.h (yardım menüsü)
   if (withoutMention === "cv.h") {
     if (message.author.id !== OWNER_ID) {
       return message.reply("Sen kimsin ya? Bu komutlar sadece yapımcıya özel.");
@@ -167,21 +164,25 @@ client.on(Events.MessageCreate, async (message) => {
 - \`canavar konuşmayı aç\`
 - \`canavar @kullanıcı ile konuşma\`
 - \`canavar @kullanıcı ile konuş\`
+- \`canavar yeniden başla\`
 - \`c.nuke\` (yetkililere açık)
     `);
   }
 
+  // Komut: canavar ...
   if (withoutMention.startsWith("canavar")) {
     if (message.author.id !== OWNER_ID) {
       return message.reply("Sen kimsin ya? Bu komutları kullanamazsın.");
     }
+
     if (withoutMention.includes("konuşmayı kapat")) {
       globalSpeakingStatus = false;
-      return message.reply("Botun genel konuşması kapatıldı.");
+      return message.reply("Botun genel konuşması **kapalı** hale getirildi.");
     }
+
     if (withoutMention.includes("konuşmayı aç")) {
       globalSpeakingStatus = true;
-      return message.reply("Botun genel konuşması açıldı.");
+      return message.reply("Botun genel konuşması **açık** hale getirildi.");
     }
 
     const mentionedUser = message.mentions.users.first();
@@ -195,13 +196,35 @@ client.on(Events.MessageCreate, async (message) => {
         return message.reply(`${mentionedUser.username} artık konuşabilir.`);
       }
     }
+
+    if (withoutMention.includes("yeniden başla")) {
+      await message.reply("Yeniden başlatılıyorum...");
+      process.exit(0);
+    }
   }
 
+  // --- Eğer kullanıcıya özel konuşma kapalıysa ama soru soruyorsa cevap verelim ---
+  if (userSpeakingStatus.get(message.author.id) === false &&
+      (withoutMention.includes("neden konuşmuyorsun") || withoutMention.includes("niye konuşmuyorsun"))) {
+    return message.reply("Yapımcım seninle konuşmamı kısıtladı.");
+  }
+
+  // --- Eğer global ya da kullanıcıya özel konuşma kapalıysa cevap verme ---
+  if (!globalSpeakingStatus || userSpeakingStatus.get(message.author.id) === false) {
+    return;
+  }
+
+  // --- Normal cevaplama ---
   await handleMessage(message);
 
+  // --- Emoji reaksiyonu ekleme ---
   if (!reactedMessages.has(message.id)) {
     try {
-      await message.react("👀");
+      if (message.author.id === OWNER_ID) {
+        await message.react("❤️");
+      } else {
+        await message.react("👀");
+      }
       reactedMessages.add(message.id);
     } catch (error) {
       console.error("Emoji eklenemedi:", error);
