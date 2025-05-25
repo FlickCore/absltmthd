@@ -537,4 +537,4 @@ if (cmd === "unban") {
 
 client.on("messageCreate", handleMessage);
 
-client.login(token);
+const token = process.env.TOKEN;
