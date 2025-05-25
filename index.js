@@ -47,12 +47,18 @@ const statusMessages = [
 ];
 
 let statusIndex = 0;
+
 function rotateStatus() {
   if (!client.user) return;
   client.user.setActivity(statusMessages[statusIndex], { type: "STREAMING", url: "https://www.twitch.tv/absolute" });
   statusIndex = (statusIndex + 1) % statusMessages.length;
 }
-setInterval(rotateStatus, 7000);
+
+client.on('ready', () => {
+  console.log(`${client.user.tag} hazır!`);
+  rotateStatus(); // ilk durumu hemen ayarla
+  setInterval(rotateStatus, 7000); // döngüyü başlat
+});
 
 // SES OYNATMA ÖZELLİĞİ KALDIRILDI
 
