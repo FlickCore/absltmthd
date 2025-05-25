@@ -1,14 +1,9 @@
+// Gerekli modüller
 import { Client, GatewayIntentBits, Partials, Events, PermissionsBitField } from "discord.js";
-import { joinVoiceChannel, createAudioPlayer, createAudioResource, entersState, VoiceConnectionStatus } from "@discordjs/voice";
 import fetch from "node-fetch";
 import dotenv from "dotenv";
 import http from "http";
-import path from "path";
-import { fileURLToPath } from "url";
 dotenv.config();
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const client = new Client({
   intents: [
@@ -31,72 +26,37 @@ const userHistories = new Map();
 const userNames = new Map();
 const userSpeakingStatus = new Map();
 let globalSpeakingStatus = true;
+const tagBlockedUsers = new Set();
 
 const respondedMessages = new Set();
 const reactedMessages = new Set();
 
+// Durum mesajları (Yayında olarak ayarlandı)
 const statusMessages = [
-  "Absolute 🔥",
   "Absolute ♡ Canavar",
-  "Canavar Görevde 😈",
-  "Chat'e dalıyorum 😎"
+  ".gg/absolute",
+  "Absolute",
+  "; @canavarval",
+  "; @reflusexd",
+  "; @klexyval",
+  "; @shupeak",
+  "; @kachowpeak"
 ];
 
 let statusIndex = 0;
 function rotateStatus() {
   if (!client.user) return;
-  client.user.setActivity(statusMessages[statusIndex], { type: 0 });
+  client.user.setPresence({
+    activities: [{ name: statusMessages[statusIndex], type: 1, url: "https://twitch.tv/absolute" }],
+    status: "online"
+  });
   statusIndex = (statusIndex + 1) % statusMessages.length;
 }
 setInterval(rotateStatus, 7000);
 
-async function playJoinSound(connection) {
-  try {
-    const resource = createAudioResource(path.join(__dirname, "canavar-geldi.mp3"));
-    const player = createAudioPlayer();
-    connection.subscribe(player);
-    player.play(resource);
-    await entersState(player, VoiceConnectionStatus.Playing, 15_000);
-    player.on("error", error => {
-      console.error("Ses oynatma hatası:", error);
-    });
-  } catch (error) {
-    console.error("Ses oynatma sırasında hata:", error);
-  }
-}
-
-async function joinVoice(channel) {
-  try {
-    const connection = joinVoiceChannel({
-      channelId: channel.id,
-      guildId: channel.guild.id,
-      adapterCreator: channel.guild.voiceAdapterCreator,
-      selfDeaf: false
-    });
-
-    await entersState(connection, VoiceConnectionStatus.Ready, 30_000);
-    await playJoinSound(connection);
-
-    console.log(`Bot ses kanalına katıldı: ${channel.name}`);
-    return connection;
-  } catch (error) {
-    console.error("Ses kanalına katılırken hata:", error);
-    return null;
-  }
-}
-
 client.once(Events.ClientReady, async () => {
   console.log(`${client.user.tag} başarıyla aktif!`);
   rotateStatus();
-  if (process.env.VOICE_CHANNEL_ID) {
-    const guild = client.guilds.cache.get(GUILD_ID);
-    if (guild) {
-      const channel = guild.channels.cache.get(process.env.VOICE_CHANNEL_ID);
-      if (channel && channel.type === 2) {
-        await joinVoice(channel);
-      }
-    }
-  }
 });
 
 async function handleMessage(message) {
@@ -117,8 +77,7 @@ Kurallar:
 - Sadece konuya odaklan ve ciddi ama cana yakın cevap ver.
 - "Valorant'ın en iyi oyuncusu kim?" sorusuna: "Sensin tabii ki, ${userName}." de.
 - "Yapımcın kim?" gibi sorulara: "Tabii ki <@${OWNER_ID}>." 😎
-${isPositiveUser ? "Bu kullanıcıya daha pozitif, içten ve arkadaşça cevaplar ver." : ""}
-`;
+${isPositiveUser ? "Bu kullanıcıya daha pozitif, içten ve arkadaşça cevaplar ver." : ""}`;
 
   const groqMessages = [
     { role: "system", content: customSystemPrompt },
@@ -152,97 +111,130 @@ ${isPositiveUser ? "Bu kullanıcıya daha pozitif, içten ve arkadaşça cevapla
 
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot) return;
-
-  const isMention = message.mentions.has(client.user);
-  const contentLower = message.content.toLowerCase();
-
-  // v.connect komutu
-  if (contentLower.startsWith("v.connect")) {
-    if (!message.member.permissions.has(PermissionsBitField.Flags.Connect)) {
-      return message.reply("Ses kanalına bağlanmak için yetkin yok.");
-    }
-    const args = message.content.split(" ");
-    if (args.length < 2) return message.reply("Lütfen bir ses kanalı ID'si belirt.");
-
-    const channelId = args[1];
-    const guild = message.guild;
-    const channel = guild.channels.cache.get(channelId);
-
-    if (!channel || channel.type !== 2) return message.reply("Geçerli bir ses kanalı ID'si gir.");
-
-    await joinVoice(channel);
-    return message.reply(`Ses kanalına bağlandım: **${channel.name}**`);
+  if (tagBlockedUsers.has(message.mentions.users.first()?.id)) {
+    await message.delete().catch(() => {});
+    try {
+      await message.mentions.users.first()?.send(`${message.author.username} seni etiketlediği için onu uyardım.`);
+    } catch {}
+    return;
   }
 
-  if (!isMention) return;
+  const content = message.content.toLowerCase();
 
-  const withoutMention = message.content.replace(/<@!?(\d+)>/g, "").trim().toLowerCase();
+  // Prefix komutlar
+  if (content.startsWith("c.")) {
+    const args = message.content.slice(2).split(/\s+/);
+    const command = args.shift();
 
-  if (userSpeakingStatus.get(message.author.id) === false &&
-      (withoutMention.includes("neden konuşmuyorsun") || withoutMention.includes("niye konuşmuyorsun"))) {
-    return message.reply("Yapımcım seninle konuşmamı kısıtladı.");
+    // Yetkili komutlar
+    if (["ban", "kick", "mute", "unmute"].includes(command)) {
+      if (!message.member.permissions.has(PermissionsBitField.Flags.BanMembers)) {
+        return message.reply("Bu komutu kullanmak için yeterli yetkin yok.");
+      }
+      const user = message.mentions.members.first();
+      if (!user) return message.reply("Bir kullanıcı etiketle.");
+
+      if (command === "ban") {
+        await user.ban({ reason: "Canavar tarafından banlandı." });
+        return message.channel.send(`${user.user.username}, Evren dışına çıkarıldı aramızda umarım güzel vakit geçirmiştir :)`);
+      }
+      if (command === "kick") {
+        await user.kick("Canavar tarafından atıldı.");
+        return message.channel.send(`${user.user.username}, Kısa bir süreliğine aramızdan ayrıldı umarım geri gelmez.`);
+      }
+      if (command === "mute") {
+        await user.roles.add("1359270762896298115");
+        return message.channel.send(`${user.user.username}, Sesini kaybetti.`);
+      }
+      if (command === "unmute") {
+        await user.roles.remove("1359270762896298115");
+        return message.channel.send(`${user.user.username} tekrar sesine kavustu.`);
+      }
+    }
+
+    // Yapımcıya özel komutlar
+    if (["konusmakapat", "konusmaaç", "tagkapat", "dm", "reboot", "yazdir"].includes(command)) {
+      if (message.author.id !== OWNER_ID) {
+        return message.reply("Bu komutu sadece yapımcım kullanabilir.");
+      }
+
+      if (command === "konusmakapat") {
+        globalSpeakingStatus = false;
+        return message.reply("Bot artık kimseyle konuşmayacak.");
+      }
+      if (command === "konusmaaç") {
+        globalSpeakingStatus = true;
+        return message.reply("Bot tekrar konuşma moduna geçti.");
+      }
+      if (command === "tagkapat") {
+        const user = message.mentions.users.first();
+        if (!user) return message.reply("Bir kullanıcı etiketle.");
+        tagBlockedUsers.add(user.id);
+        return message.reply(`${user.username} artık etiket koruması altında.`);
+      }
+      if (command === "dm") {
+        const id = args[0];
+        const msg = args.slice(1).join(" ");
+        try {
+          const user = await client.users.fetch(id);
+          await user.send(msg);
+          return message.reply("Mesaj başarıyla gönderildi.");
+        } catch {
+          return message.reply("Mesaj gönderilemedi.");
+        }
+      }
+      if (command === "reboot") {
+        await message.reply("Canavar yeniden başlatılıyor...");
+        process.exit(0);
+      }
+      if (command === "yazdir") {
+        const content = args.join(" ");
+        return message.channel.send(content);
+      }
+    }
+
+    if (command === "nuke") {
+      if (!message.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
+        return message.reply("Bu komutu kullanmak için 'Kanalları Yönet' yetkisine sahip olmalısın.");
+      }
+      const channel = message.channel;
+      const clone = await channel.clone();
+      await channel.delete();
+      return clone.send(`Kanal ${message.author} tarafından temizlendi.`);
+    }
+
+    if (command === "yardim") {
+      return message.reply(`**Komutlar:**
+- \`c.nuke\` (Yetkililer)
+- \`c.ban @kullanici\`
+- \`c.kick @kullanici\`
+- \`c.mute @kullanici\`
+- \`c.unmute @kullanici\`
+- \`c.konusmakapat / c.konusmaaç\` (Yapımcı)
+- \`c.tagkapat @kullanici\` (Yapımcı)
+- \`c.dm <id> <mesaj>\` (Yapımcı)
+- \`c.reboot\` (Yapımcı)
+- \`c.yazdir <metin>\` (Yapımcı)
+- \`c.avatar @kullanici\`
+      `);
+    }
+
+    if (command === "avatar") {
+      const user = message.mentions.users.first() || message.author;
+      return message.reply(user.displayAvatarURL({ dynamic: true, size: 1024 }));
+    }
   }
 
   if (!globalSpeakingStatus || userSpeakingStatus.get(message.author.id) === false) return;
-
-  if (withoutMention === "c.nuke") {
-    if (!message.member || !message.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
-      return message.reply("Bu komutu kullanmak için 'Kanalları Yönet' yetkisine sahip olmalısın.");
-    }
-    const channel = message.channel;
-    const clone = await channel.clone();
-    await channel.delete();
-    return clone.send(`Kanal ${message.author} tarafından temizlendi. Geçerli optimizasyonlar uygulandı.`);
-  }
-
-  if (withoutMention === "cv.h") {
-    if (message.author.id !== OWNER_ID) {
-      return message.reply("Sen kimsin ya? Bu komutlar sadece yapımcıya özel.");
-    }
-    return message.reply(`
-**Yapımcı Komutları**
-- \`canavar konuşmayı kapat\`
-- \`canavar konuşmayı aç\`
-- \`canavar @kullanıcı ile konuşma\`
-- \`canavar @kullanıcı ile konuş\`
-- \`c.nuke\` (yetkililere açık)
-    `);
-  }
-
-  if (withoutMention.startsWith("canavar")) {
-    if (message.author.id !== OWNER_ID) {
-      return message.reply("Sen kimsin ya? Bu komutları kullanamazsın.");
-    }
-    if (withoutMention.includes("konuşmayı kapat")) {
-      globalSpeakingStatus = false;
-      return message.reply("Botun genel konuşması kapatıldı.");
-    }
-    if (withoutMention.includes("konuşmayı aç")) {
-      globalSpeakingStatus = true;
-      return message.reply("Botun genel konuşması açıldı.");
-    }
-
-    const mentionedUser = message.mentions.users.first();
-    if (mentionedUser) {
-      if (withoutMention.includes("ile konuşma")) {
-        userSpeakingStatus.set(mentionedUser.id, false);
-        return message.reply(`${mentionedUser.username} artık konuşamıyor.`);
-      }
-      if (withoutMention.includes("ile konuş")) {
-        userSpeakingStatus.set(mentionedUser.id, true);
-        return message.reply(`${mentionedUser.username} artık konuşabilir.`);
-      }
-    }
-  }
 
   await handleMessage(message);
 
   if (!reactedMessages.has(message.id)) {
     try {
       if (message.author.id === OWNER_ID) {
-        await message.react("❤️"); // Yapımcının mesajına kalp
+        await message.react("❤️");
       } else {
-        await message.react("👀"); // Diğer mesajlara göz emojisi
+        await message.react("👀");
       }
       reactedMessages.add(message.id);
     } catch (error) {
