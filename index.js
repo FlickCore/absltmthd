@@ -1,5 +1,5 @@
 import { Client, GatewayIntentBits, Partials, Events, PermissionsBitField, MessageEmbed } from "discord.js";
-import { joinVoiceChannel, createAudioPlayer, createAudioResource, entersState, VoiceConnectionStatus } from "@discordjs/voice";
+import { joinVoiceChannel, entersState, VoiceConnectionStatus } from "@discordjs/voice";
 import fetch from "node-fetch";
 import dotenv from "dotenv";
 import http from "http";
@@ -309,32 +309,65 @@ client.on(Events.MessageCreate, async (message) => {
 
   if (cmd === "lock") {
     if (!message.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
-      return message.reply("Sohbeti kilitlemek için 'Kanalları Yönet' yetkin olmalı.");
+      return message.reply("Bu komutu kullanmak için yetkin yok.");
     }
-    if (chatLocked) return message.reply("Sohbet zaten kilitli.");
     chatLocked = true;
-    await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: false });
     return message.channel.send("Sohbet kilitlendi.");
   }
 
   if (cmd === "unlock") {
     if (!message.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
-      return message.reply("Sohbet kilidini açmak için 'Kanalları Yönet' yetkin olmalı.");
+      return message.reply("Bu komutu kullanmak için yetkin yok.");
     }
-    if (!chatLocked) return message.reply("Sohbet zaten açık.");
     chatLocked = false;
-    await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: true });
-    return message.channel.send("Sohbet kilidi açıldı.");
+    return message.channel.send("Sohbet kilidi kaldırıldı.");
   }
 
-  if (isMention || message.reference) {
-    await handleMessage(message);
+  if (cmd === "dm") {
+    if (message.author.id !== OWNER_ID) return message.reply("Bu komutu sadece yapımcım kullanabilir.");
+    if (args.length < 2) return message.reply("Lütfen bir kullanıcı ID'si ve mesaj gir.");
+    const targetId = args.shift();
+    const dmMsg = args.join(" ");
+    try {
+      const user = await client.users.fetch(targetId);
+      await user.send(dmMsg);
+      return message.channel.send("Mesaj gönderildi.");
+    } catch {
+      return message.channel.send("Mesaj gönderilemedi.");
+    }
+  }
+
+  if (cmd === "yardim" || cmd === "help") {
+    const embed = new MessageEmbed()
+      .setTitle("Canavar Bot Komutları")
+      .setColor("AQUA")
+      .setDescription(
+        `
+**c.nuke** - Kanalı siler (yönetici yetkisi gerekli)
+**c.ban <ID>** - Kullanıcıyı banlar
+**c.unban <ID>** - Ban kaldırır
+**c.tagkapat <ID>** - Kullanıcının tagını kapatır
+**c.tagac <ID>** - Kullanıcının tagını açar
+**c.yazdir <metin>** - Yapımcıya özel, bot metni yazar
+**c.avatar [@kullanıcı]** - Kullanıcının avatarını gösterir
+**c.reboot** - Botu yeniden başlatır (yapımcıya özel)
+**c.lock** - Sohbeti kilitler
+**c.unlock** - Sohbet kilidini kaldırır
+**c.dm <ID> <mesaj>** - Kullanıcıya DM gönderir (yapımcıya özel)
+        `
+      );
+    return message.channel.send({ embeds: [embed] });
   }
 });
 
-http.createServer((req, res) => {
-  res.writeHead(200);
-  res.end("Canavar Bot çalışıyor.");
-}).listen(process.env.PORT || 3000);
+// ChatGPT tarzı yapay zekâ yanıtı sadece bot etiketlenince ya da mesaj reply ise çalışır
+client.on(Events.MessageCreate, async (message) => {
+  if (message.author.bot) return;
+
+  // Aynı mesaj tekrar yanıtlanmasın
+  if (respondedMessages.has(message.id)) return;
+
+  await handleMessage(message);
+});
 
 client.login(token);
