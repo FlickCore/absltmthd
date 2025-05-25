@@ -20,7 +20,6 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -100,6 +99,15 @@ client.once(Events.ClientReady, async () => {
 const CHECK_EMOJI = "✅";
 const CROSS_EMOJI = "❌";
 
+// Global değişkenler (eksik olanlar)
+const chatLocked = false; // Chat kilit durumu için; bunu kendi mantığına göre yönetmelisin
+const tagKapatSet = new Set(); // Tag koruması için
+const mutedUsers = new Set(); // Susturulan kullanıcılar için
+const userHistories = new Map(); // Yapay zeka sohbet geçmişi için
+const userNames = new Map(); // Kullanıcı isimleri için
+const OWNER_ID = process.env.OWNER_ID || "SahipIDBuraya"; // Yapımcı ID'si mutlaka .env veya burada tanımlı olmalı
+const GROQ_API_KEY = process.env.GROQ_API_KEY || ""; // API anahtarı .env'den alınmalı
+
 async function askConfirmation(message, question) {
   const filter = (reaction, user) => {
     return [CHECK_EMOJI, CROSS_EMOJI].includes(reaction.emoji.name) && user.id === message.author.id;
@@ -138,10 +146,15 @@ async function getMuteRole(guild) {
       }
     } catch (err) {
       console.error("Mute rolü oluşturulamadı:", err);
+      return null;
     }
   }
   return muteRole;
 }
+
+client.on(Events.MessageCreate, async (message) => {
+  await handleMessage(message);
+});
 
 async function handleMessage(message) {
   if (message.author.bot) return;
@@ -169,9 +182,10 @@ async function handleMessage(message) {
     }
   }
 
-  // Yapay zekaya sadece bot etiketlenince yanıt verir
+  // Yapay zekaya sadece bot etiketlenince veya prefix ile komut girilince yanıt verir
   const isMention = message.mentions.has(client.user);
   if (!message.content.toLowerCase().startsWith("c.") && !isMention) return;
+
   if (isMention && !message.content.toLowerCase().startsWith("c.")) {
     // Yapay zeka cevabı için (etiketlenince)
     const userId = message.author.id;
@@ -221,322 +235,146 @@ ${isPositiveUser ? "Bu kullanıcıya daha pozitif, içten ve arkadaşça cevapla
     return;
   }
 
-  // Prefix ile başlayan komut işlemleri
-  const args = message.content.slice(2).trim().split(/ +/);
-  const cmd = args.shift().toLowerCase();
+  // Prefix komutları: c.nuke, c.kick, c.ban, c.mute, c.unmute, c.yardım, c.tagkapat, c.yazdir, c.avatar, c.dm, c.reboot vb.
 
-  // --- KOMUTLAR ---
+  const args = message.content.slice(2).trim().split(/ +/g);
+  const command = args.shift().toLowerCase();
 
-  if (cmd === "nuke") {
-    if (!message.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
-      return message.reply("Bu komutu kullanmak için 'Kanalları Yönet' yetkisine sahip olmalısın.");
-    }
-    const onay = await askConfirmation(message, `${message.author}, gerçekten bu kanalı silmek istediğine emin misin?`);
-    if (!onay) return message.channel.send("İşlem iptal edildi.");
+  // Admin ve yapımcı kontrolleri
+  const isOwner = message.author.id === OWNER_ID;
+  const isAdmin = message.member.permissions.has(PermissionsBitField.Flags.Administrator);
 
-    const oldChannel = message.channel;
-    const guild = oldChannel.guild;
+  // Komutlar:
+
+  if (command === "nuke") {
+    if (!isAdmin) return message.reply("Bu komutu kullanmak için yönetici olmalısın.");
+    const count = parseInt(args[0]) || 50;
     try {
-      // Kanalın özelliklerini kopyala
-      const position = oldChannel.position;
-      const name = oldChannel.name;
-      const type = oldChannel.type;
-      const parentId = oldChannel.parentId;
-      const permissionOverwrites = oldChannel.permissionOverwrites.cache.map(po => ({
-        id: po.id,
-        type: po.type,
-        allow: po.allow.bitfield.toString(),
-        deny: po.deny.bitfield.toString()
-      }));
-
-      // Kanalı sil
-      await oldChannel.delete();
-
-      // Yeni kanal oluştur
-      const newChannel = await guild.channels.create({
-        name,
-        type,
-        parent: parentId,
-        permissionOverwrites: permissionOverwrites.map(po => ({
-          id: po.id,
-          type: po.type,
-          allow: BigInt(po.allow),
-          deny: BigInt(po.deny)
-        }))
-      });
-
-      // Pozisyonu ayarla
-      await newChannel.setPosition(position);
-
-      // Bilgi mesajı gönder
-      await newChannel.send(`${message.author} kanalı nuke'ladı, kanal yenilendi.`);
-
-    } catch (error) {
-      console.error("Nuke hatası:", error);
-      return message.channel.send("Kanalı yenilerken bir hata oluştu.");
+      const messages = await message.channel.messages.fetch({ limit: count });
+      await message.channel.bulkDelete(messages, true);
+      message.channel.send(`${messages.size} mesaj silindi.`).then(m => setTimeout(() => m.delete().catch(() => {}), 5000));
+    } catch (err) {
+      message.reply("Mesajlar silinirken hata oluştu.");
     }
-    return;
-  }
-
-  if (cmd === "lock") {
-    if (!message.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
-      return message.reply("Bu komutu kullanmak için 'Kanalları Yönet' yetkisine sahip olmalısın.");
-    }
-    const channel = message.channel;
-    try {
-      await channel.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: false });
-      await message.channel.send("Kanal kilitlendi, sadece yetkililer yazabilir.");
-    } catch {
-      await message.channel.send("Kanal kilitlenirken bir hata oluştu.");
-    }
-    return;
-  }
-
-  if (cmd === "unlock") {
-    if (!message.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
-      return message.reply("Bu komutu kullanmak için 'Kanalları Yönet' yetkisine sahip olmalısın.");
-    }
-    const channel = message.channel;
-    try {
-      await channel.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: null });
-      await message.channel.send("Kanal kilidi kaldırıldı, herkes yazabilir.");
-    } catch {
-      await message.channel.send("Kanal kilidi açılırken bir hata oluştu.");
-    }
-    return;
-  }
-
-  if (cmd === "ban") {
-    if (!message.member.permissions.has(PermissionsBitField.Flags.BanMembers)) {
-      return message.reply("Bu komutu kullanmak için 'Üyeleri Engelle' yetkisine sahip olmalısın.");
-    }
-    if (!args[0]) return message.reply("Lütfen banlanacak kullanıcıyı etiketle veya ID gir.");
-    let banMember;
-    try {
-      banMember = await message.guild.members.fetch(args[0].replace(/[<@!>]/g, ""));
-    } catch {
-      return message.reply("Kullanıcı bulunamadı.");
-    }
-    if (!banMember) return message.reply("Kullanıcı bulunamadı.");
-    if (banMember.id === message.author.id) return message.reply("Kendini banlayamazsın.");
-    if (!banMember.bannable) return message.reply("Bu kullanıcıyı banlayamam.");
+  } else if (command === "kick") {
+    if (!isAdmin) return message.reply("Bu komutu kullanmak için yönetici olmalısın.");
+    const user = message.mentions.members.first();
+    if (!user) return message.reply("Bir kullanıcıyı etiketlemelisin.");
+    if (!user.kickable) return message.reply("Bu kullanıcıyı atamıyorum.");
     const reason = args.slice(1).join(" ") || "Belirtilmedi";
     try {
-      await banMember.ban({ reason });
-      await message.channel.send(`${banMember.user.tag} başarıyla banlandı. Sebep: ${reason}`);
+      await user.kick(reason);
+      message.channel.send(`${user.user.tag} sunucudan atıldı.`);
     } catch {
-      await message.channel.send("Ban işlemi başarısız oldu.");
+      message.reply("Kullanıcı atılamadı.");
     }
-    return;
-  }
-
-  if (cmd === "kick") {
-    if (!message.member.permissions.has(PermissionsBitField.Flags.KickMembers)) {
-      return message.reply("Bu komutu kullanmak için 'Üyeleri At' yetkisine sahip olmalısın.");
-    }
-    if (!args[0]) return message.reply("Lütfen atılacak kullanıcıyı etiketle veya ID gir.");
-    let kickMember;
-    try {
-      kickMember = await message.guild.members.fetch(args[0].replace(/[<@!>]/g, ""));
-    } catch {
-      return message.reply("Kullanıcı bulunamadı.");
-    }
-    if (!kickMember) return message.reply("Kullanıcı bulunamadı.");
-    if (kickMember.id === message.author.id) return message.reply("Kendini atamazsın.");
-    if (!kickMember.kickable) return message.reply("Bu kullanıcıyı atamam.");
+  } else if (command === "ban") {
+    if (!isAdmin) return message.reply("Bu komutu kullanmak için yönetici olmalısın.");
+    const user = message.mentions.members.first();
+    if (!user) return message.reply("Bir kullanıcıyı etiketlemelisin.");
+    if (!user.bannable) return message.reply("Bu kullanıcıyı banlayamıyorum.");
     const reason = args.slice(1).join(" ") || "Belirtilmedi";
     try {
-      await kickMember.kick(reason);
-      await message.channel.send(`${kickMember.user.tag} başarıyla atıldı. Sebep: ${reason}`);
+      await user.ban({ reason });
+      message.channel.send(`${user.user.tag} sunucudan yasaklandı.`);
     } catch {
-      await message.channel.send("Atma işlemi başarısız oldu.");
+      message.reply("Kullanıcı banlanamadı.");
     }
-    return;
-  }
-
-  if (cmd === "mute") {
-    if (!message.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
-      return message.reply("Bu komutu kullanmak için 'Üyeleri Sustur' yetkisine sahip olmalısın.");
-    }
-    if (!args[0]) return message.reply("Lütfen susturulacak kullanıcıyı etiketle veya ID gir.");
-    let muteMember;
-    try {
-      muteMember = await message.guild.members.fetch(args[0].replace(/[<@!>]/g, ""));
-    } catch {
-      return message.reply("Kullanıcı bulunamadı.");
-    }
-    if (!muteMember) return message.reply("Kullanıcı bulunamadı.");
-    if (muteMember.id === message.author.id) return message.reply("Kendini susturamazsın.");
-    if (mutedUsers.has(muteMember.id)) return message.reply("Bu kullanıcı zaten susturulmuş.");
+  } else if (command === "mute") {
+    if (!isAdmin) return message.reply("Bu komutu kullanmak için yönetici olmalısın.");
+    const user = message.mentions.members.first();
+    if (!user) return message.reply("Bir kullanıcıyı etiketlemelisin.");
     const muteRole = await getMuteRole(message.guild);
-    if (!muteRole) return message.reply("Mute rolü oluşturulamadı veya erişilemiyor.");
+    if (!muteRole) return message.reply("Mute rolü bulunamadı veya oluşturulamadı.");
+    if (user.roles.cache.has(muteRole.id)) return message.reply("Bu kullanıcı zaten susturulmuş.");
     try {
-      await muteMember.roles.add(muteRole);
-      mutedUsers.add(muteMember.id);
-      await message.channel.send(`${muteMember.user.tag} susturuldu.`);
+      await user.roles.add(muteRole);
+      mutedUsers.add(user.id);
+      message.channel.send(`${user.user.tag} susturuldu.`);
     } catch {
-      await message.channel.send("Susturma işlemi başarısız oldu.");
+      message.reply("Susturma işlemi başarısız.");
     }
-    return;
-  }
-
-  if (cmd === "unmute") {
-    if (!message.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
-      return message.reply("Bu komutu kullanmak için 'Üyeleri Sustur' yetkisine sahip olmalısın.");
-    }
-    if (!args[0]) return message.reply("Lütfen susturması kaldırılacak kullanıcıyı etiketle veya ID gir.");
-    let unmuteMember;
-    try {
-      unmuteMember = await message.guild.members.fetch(args[0].replace(/[<@!>]/g, ""));
-    } catch {
-      return message.reply("Kullanıcı bulunamadı.");
-    }
-    if (!unmuteMember) return message.reply("Kullanıcı bulunamadı.");
+  } else if (command === "unmute") {
+    if (!isAdmin) return message.reply("Bu komutu kullanmak için yönetici olmalısın.");
+    const user = message.mentions.members.first();
+    if (!user) return message.reply("Bir kullanıcıyı etiketlemelisin.");
     const muteRole = await getMuteRole(message.guild);
-    if (!muteRole) return message.reply("Mute rolü oluşturulamadı veya erişilemiyor.");
+    if (!muteRole) return message.reply("Mute rolü bulunamadı veya oluşturulamadı.");
+    if (!user.roles.cache.has(muteRole.id)) return message.reply("Bu kullanıcı susturulmamış.");
     try {
-      await unmuteMember.roles.remove(muteRole);
-      mutedUsers.delete(unmuteMember.id);
-      await message.channel.send(`${unmuteMember.user.tag} susturması kaldırıldı.`);
+      await user.roles.remove(muteRole);
+      mutedUsers.delete(user.id);
+      message.channel.send(`${user.user.tag} susturulması kaldırıldı.`);
     } catch {
-      await message.channel.send("Susturmayı kaldırma işlemi başarısız oldu.");
+      message.reply("Susturma kaldırma işlemi başarısız.");
     }
-    return;
-  }
-
-  if (cmd === "yazdir") {
-    if (message.author.id !== OWNER_ID) return message.reply("Bu komutu sadece yapımcım kullanabilir.");
-    if (args.length === 0) return message.reply("Lütfen yazdırmak istediğin metni yaz.");
-    const text = args.join(" ");
-    await message.channel.send(text);
-    return;
-  }
-
-  if (cmd === "tagkapat") {
-    if (tagKapatSet.has(message.author.id)) {
-      return message.reply("Zaten tag koruması kapalı.");
-    }
-    tagKapatSet.add(message.author.id);
-    await message.reply("Tag koruması kapatıldı.");
-    return;
-  }
-
-  if (cmd === "tagac") {
-    if (!tagKapatSet.has(message.author.id)) {
-      return message.reply("Tag koruması zaten açık.");
-    }
-    tagKapatSet.delete(message.author.id);
-    await message.reply("Tag koruması açıldı.");
-    return;
-  }
-
-if (cmd === "avatar") {
-  let user = message.mentions.users.first() || message.author;
-  const embed = new EmbedBuilder()
-    .setTitle(`${user.username} kullanıcısının avatarı`)
-    .setImage(user.displayAvatarURL({ dynamic: true, size: 1024 }))
-    .setColor("#00FFFF");
-  await message.channel.send({ embeds: [embed] });
-  return;
-}
-  if (cmd === "reboot") {
-    if (message.author.id !== OWNER_ID) return message.reply("Bu komutu sadece yapımcım kullanabilir.");
-    await message.channel.send("Bot yeniden başlatılıyor...");
-    process.exit(0);
-    return;
-  }
-
-  if (cmd === "dm") {
-    if (message.author.id !== OWNER_ID) return message.reply("Bu komutu sadece yapımcım kullanabilir.");
-    if (args.length < 2) return message.reply("Kullanıcı ID'si ve mesajı gir.");
-    const targetId = args.shift();
-    const dmMessage = args.join(" ");
-    try {
-      const user = await client.users.fetch(targetId);
-      await user.send(dmMessage);
-      await message.channel.send("Mesaj gönderildi.");
-    } catch {
-      await message.channel.send("Mesaj gönderilemedi, kullanıcı bulunamadı veya DM kapalı.");
-    }
-    return;
-  }
-
-  if (cmd === "duyuru") {
-    if (message.author.id !== OWNER_ID) return message.reply("Bu komutu sadece yapımcım kullanabilir.");
-    if (args.length === 0) return message.reply("Duyuru metni yaz.");
-    const text = args.join(" ");
-    const members = await message.guild.members.fetch();
-    let count = 0;
-    for (const [id, member] of members) {
-      if (!member.user.bot) {
-        try {
-          await member.send(text);
-          count++;
-        } catch {}
-      }
-    }
-    await message.channel.send(`Duyuru ${count} üyeye gönderildi.`);
-    return;
-  }
-
-  if (cmd === "tagkapat") {
-    // Yukarıda zaten var, ekleme yok
-  }
-// Tag aç komutu
-if (cmd === "tagac") {
-  if (!tagKapatSet.has(message.author.id)) {
-    return message.reply("Tag koruması zaten açık.");
-  }
-  tagKapatSet.delete(message.author.id);
-  await message.reply("Tag koruması açıldı.");
-  return;
-}
-
-// Unban komutu
-if (cmd === "unban") {
-  if (!message.member.permissions.has(PermissionsBitField.Flags.BanMembers)) {
-    return message.reply("Bu komutu kullanmak için 'Üyeleri Engelle' yetkisine sahip olmalısın.");
-  }
-  if (!args[0]) return message.reply("Lütfen banı kaldırılacak kullanıcının ID'sini yaz.");
-  
-  try {
-    await message.guild.members.unban(args[0]);
-    await message.channel.send(`${args[0]} kullanıcısının banı kaldırıldı.`);
-  } catch (error) {
-    await message.channel.send("Ban kaldırma işlemi başarısız oldu veya kullanıcı banlı değil.");
-  }
-  return;
-}
-  if (cmd === "yardım") {
+  } else if (command === "yardım" || command === "help") {
     const embed = new EmbedBuilder()
       .setTitle("Canavar Bot Komutları")
-      .setDescription("Prefix: `c.`\n\n**Yetkili Komutlar:**\n" +
-        "`nuke` - Kanalı yeniler\n" +
-        "`lock` - Kanalı kilitler\n" +
-        "`unlock` - Kanal kilidini açar\n" +
-        "`ban` - Üyeyi banlar\n" +
-        "`kick` - Üyeyi atar\n" +
-        "`mute` - Üyeyi susturur\n" +
-        "`unmute` - Üyenin susturmasını kaldırır\n\n" +
-        "**Genel Komutlar:**\n" +
-        "`yazdir` - Yapımcıya özel, bot mesajı yazdırır\n" +
-        "`avatar` - Kullanıcının avatarını gösterir\n" +
-        "`dm` - Yapımcıya özel DM gönderme komutu\n" +
-        "`duyuru` - Yapımcıya özel tüm üyelere DM gönderir\n" +
-        "`reboot` - Yapımcıya özel botu yeniden başlatır\n" +
-        "`tagkapat` / `tagac` - Etiket korumasını açar/kapatır")
-      .setColor("#00FFFF")
-      .setFooter({ text: "Canavar Bot © 2025" });
+      .setDescription("Tüm komutlar `c.` prefixi ile çalışır.\n\n" +
+        "**c.nuke [sayı]** - Son mesajları siler\n" +
+        "**c.kick @kullanıcı [sebep]** - Kullanıcıyı atar\n" +
+        "**c.ban @kullanıcı [sebep]** - Kullanıcıyı banlar\n" +
+        "**c.mute @kullanıcı** - Kullanıcıyı susturur\n" +
+        "**c.unmute @kullanıcı** - Susturmayı kaldırır\n" +
+        "**c.tagkapat** - Etiket korumasını aç/kapat\n" +
+        "**c.yazdir [metin]** - Botun yazmasını sağlar (Yapımcıya özel)\n" +
+        "**c.avatar [@kullanıcı]** - Kullanıcının avatarını gösterir\n" +
+        "**c.dm @kullanıcı [mesaj]** - Yapımcıdan DM gönderir\n" +
+        "**c.reboot** - Botu yeniden başlatır (Yapımcıya özel)")
+      .setColor("DarkBlue")
+      .setFooter({ text: "Canavar Bot" });
 
     await message.channel.send({ embeds: [embed] });
-    return;
+  } else if (command === "tagkapat") {
+    if (!isAdmin) return message.reply("Bu komutu kullanmak için yönetici olmalısın.");
+    if (tagKapatSet.has(message.author.id)) {
+      tagKapatSet.delete(message.author.id);
+      message.channel.send("Tag koruması kapatıldı.");
+    } else {
+      tagKapatSet.add(message.author.id);
+      message.channel.send("Tag koruması açıldı.");
+    }
+  } else if (command === "yazdir") {
+    if (!isOwner) return message.reply("Bu komutu sadece yapımcım kullanabilir.");
+    if (args.length === 0) return message.reply("Yazdırmak için bir metin gir.");
+    const text = args.join(" ");
+    await message.channel.send(text);
+  } else if (command === "avatar") {
+    let user = message.mentions.users.first() || message.author;
+    const avatarUrl = user.displayAvatarURL({ dynamic: true, size: 512 });
+    const embed = new EmbedBuilder()
+      .setTitle(`${user.username} kullanıcısının avatarı`)
+      .setImage(avatarUrl)
+      .setColor("DarkGreen");
+    await message.channel.send({ embeds: [embed] });
+  } else if (command === "dm") {
+    if (!isOwner) return message.reply("Bu komutu sadece yapımcım kullanabilir.");
+    const user = message.mentions.users.first();
+    if (!user) return message.reply("Bir kullanıcıyı etiketlemelisin.");
+    const dmMessage = args.slice(1).join(" ");
+    if (!dmMessage) return message.reply("Gönderilecek mesajı yazmalısın.");
+    try {
+      await user.send(dmMessage);
+      message.channel.send("Mesaj gönderildi.");
+    } catch {
+      message.reply("Mesaj gönderilemedi.");
+    }
+  } else if (command === "reboot") {
+    if (!isOwner) return message.reply("Bu komutu sadece yapımcım kullanabilir.");
+    await message.channel.send("Bot yeniden başlatılıyor...");
+    process.exit(0);
   }
-
-  // Eğer komut tanımlı değilse bir şey yapma
 }
 
-client.on("messageCreate", handleMessage);
-
-client.login(process.env.TOKEN).catch(err => {
-  console.error("Bot giriş hatası:", err);
+// Render.com için otomatik yeniden başlatma
+process.on("uncaughtException", (err) => {
+  console.error("Beklenmeyen hata:", err);
+  process.exit(1);
 });
+
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled Rejection at:", promise, "reason:", reason);
+});
+
+client.login(process.env.TOKEN);
