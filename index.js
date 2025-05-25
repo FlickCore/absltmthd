@@ -1,10 +1,24 @@
 import pkg from "discord.js";
-const { Client, GatewayIntentBits, Partials, Events, PermissionsBitField, EmbedBuilder, ChannelType } = pkg;
+const {
+  Client,
+  GatewayIntentBits,
+  Partials,
+  Events,
+  PermissionsBitField,
+  EmbedBuilder,
+  ChannelType
+} = pkg;
+
 import { joinVoiceChannel, entersState, VoiceConnectionStatus } from "@discordjs/voice";
 import fetch from "node-fetch";
 import dotenv from "dotenv";
 import path from "path";
+import { fileURLToPath } from "url";
+
 dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const client = new Client({
   intents: [
@@ -15,11 +29,12 @@ const client = new Client({
     GatewayIntentBits.GuildMessageReactions,
     GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildPresences // **Burayı ekledik**
+    GatewayIntentBits.GuildPresences // Yayında durumu için önemli!
   ],
   partials: [Partials.Channel, Partials.Message, Partials.Reaction, Partials.User]
 });
 
+// Yayın mesajları
 const statusMessages = [
   "Absolute ♡ Canavar",
   ".gg/absolute",
@@ -35,30 +50,18 @@ let statusIndex = 0;
 
 function rotateStatus() {
   if (!client.user) return;
-  client.user.setActivity(statusMessages[statusIndex], { type: "STREAMING", url: "https://www.twitch.tv/absolute" });
+  client.user.setActivity(statusMessages[statusIndex], {
+    type: "STREAMING",
+    url: "https://www.twitch.tv/absolute"
+  });
   statusIndex = (statusIndex + 1) % statusMessages.length;
 }
 
 client.on('ready', () => {
   console.log(`${client.user.tag} hazır!`);
-  rotateStatus(); // İlk durumu hemen ayarla
-  setInterval(rotateStatus, 7000); // Döngüyü başlat
+  rotateStatus(); // İlk durum
+  setInterval(rotateStatus, 7000); // Her 7 saniyede bir değiştir
 });
-
-let statusIndex = 0;
-
-function rotateStatus() {
-  if (!client.user) return;
-  client.user.setActivity(statusMessages[statusIndex], { type: "STREAMING", url: "https://www.twitch.tv/absolute" });
-  statusIndex = (statusIndex + 1) % statusMessages.length;
-}
-
-client.on('ready', () => {
-  console.log(`${client.user.tag} hazır!`);
-  rotateStatus(); // ilk durumu hemen ayarla
-  setInterval(rotateStatus, 7000); // döngüyü başlat
-});
-
 // SES OYNATMA ÖZELLİĞİ KALDIRILDI
 
 async function joinVoice(channel) {
