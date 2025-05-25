@@ -36,9 +36,9 @@ let globalSpeakingStatus = true;
 const respondedMessages = new Set();
 const reactedMessages = new Set();
 
-const tagKapatSet = new Set(); // tag kapatılan kullanıcılar id
-const mutedUsers = new Set(); // sunucuda mute edilen kullanıcılar
-let chatLocked = false; // sohbet kilitli mi
+const tagKapatSet = new Set(); // tag koruması kapalı olan kullanıcılar
+const mutedUsers = new Set(); // mute edilenler
+let chatLocked = false;
 
 const statusMessages = [
   "Absolute ♡ Canavar",
@@ -54,13 +54,13 @@ const statusMessages = [
 let statusIndex = 0;
 function rotateStatus() {
   if (!client.user) return;
-  // Yayında (streaming) olarak ayarla
-  client.user.setActivity(statusMessages[statusIndex], { type: "STREAMING", url: "discord.gg/absolute" });
+  // STREAMING türü ve URL discord.gg/absolute olarak ayarlandı
+  client.user.setActivity(statusMessages[statusIndex], { type: "STREAMING", url: "https://discord.gg/absolute" });
   statusIndex = (statusIndex + 1) % statusMessages.length;
 }
 setInterval(rotateStatus, 7000);
 
-// SES OYNATMA ÖZELLİĞİ KALDIRILDI (hata veriyordu)
+// SES OYNATMA ÖZELLİĞİ KALDIRILDI
 
 async function joinVoice(channel) {
   try {
@@ -93,7 +93,7 @@ client.once(Events.ClientReady, async () => {
   }
 });
 
-// Onay için reaction emojileri
+// Onay emoji
 const CHECK_EMOJI = "✅";
 const CROSS_EMOJI = "❌";
 
@@ -117,11 +117,7 @@ async function askConfirmation(message, question) {
 }
 
 async function handleMessage(message) {
-  // Yapay zeka sadece bot etiketlenince ya da reply yapılınca cevap versin
-  if (
-    !message.mentions.has(client.user) &&
-    !message.reference
-  ) return;
+  if (!message.mentions.has(client.user) && !message.reference) return;
 
   const userId = message.author.id;
   const userName = message.member?.nickname || message.author.username;
@@ -167,19 +163,15 @@ async function handleMessage(message) {
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot) return;
 
-  // Chat kilitleme kontrolü
   if (chatLocked && !message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
     return message.delete().catch(() => { });
   }
 
-  // Tag kapalıysa, tagı engelle
   if (tagKapatSet.has(message.author.id)) {
-    // Taglanan kişi varsa ve mesajda tag var mı?
     const taggedUsers = message.mentions.users;
     if (taggedUsers.size > 0) {
       for (const user of taggedUsers.values()) {
         if (tagKapatSet.has(user.id)) {
-          // Mesajı sil ve özelden uyar
           await message.delete().catch(() => { });
           try {
             await message.author.send(`Seni etiketlediği için onu uyardım: ${user.username}`);
@@ -194,13 +186,10 @@ client.on(Events.MessageCreate, async (message) => {
   const isMention = message.mentions.has(client.user);
   const contentLower = message.content.toLowerCase();
 
-  // Prefix: c. olarak ayarlandı
   if (!contentLower.startsWith("c.")) return;
 
   const args = message.content.slice(2).trim().split(/ +/);
   const cmd = args.shift().toLowerCase();
-
-  // Komutlar:
 
   if (cmd === "connect") {
     if (!message.member.permissions.has(PermissionsBitField.Flags.Connect)) {
@@ -231,7 +220,7 @@ client.on(Events.MessageCreate, async (message) => {
 
   if (cmd === "ban") {
     if (!message.member.permissions.has(PermissionsBitField.Flags.BanMembers)) {
-      return message.reply("Üyeleri yasaklamak için yetkin yok.");
+      return message.reply("Kullanıcıyı yasaklamak için yetkin yok.");
     }
     const user = message.mentions.users.first();
     if (!user) return message.reply("Lütfen banlamak istediğin kullanıcıyı etiketle.");
@@ -243,6 +232,20 @@ client.on(Events.MessageCreate, async (message) => {
       return message.channel.send(`${user.tag} sunucudan yasaklandı. Sebep: ${reason}`);
     } catch {
       return message.reply("Ban işlemi sırasında hata oluştu.");
+    }
+  }
+
+  if (cmd === "unban") {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.BanMembers)) {
+      return message.reply("Kullanıcıların yasaklarını kaldırmak için yetkin yok.");
+    }
+    if (args.length < 1) return message.reply("Lütfen yasak kaldırmak istediğin kullanıcı ID'sini belirt.");
+    const userId = args[0];
+    try {
+      await message.guild.bans.remove(userId);
+      return message.channel.send(`<@${userId}> kullanıcısının yasağı kaldırıldı.`);
+    } catch {
+      return message.reply("Yasağı kaldırma işlemi sırasında hata oluştu veya kullanıcı yasaklı değil.");
     }
   }
 
@@ -291,7 +294,6 @@ client.on(Events.MessageCreate, async (message) => {
   }
 
   if (cmd === "tagkapat") {
-    // Tag koruma aç/kapat
     if (tagKapatSet.has(message.author.id)) {
       tagKapatSet.delete(message.author.id);
       return message.reply("Tag koruması kapatıldı.");
@@ -299,6 +301,14 @@ client.on(Events.MessageCreate, async (message) => {
       tagKapatSet.add(message.author.id);
       return message.reply("Tag koruması açıldı. Artık seni etiketleyenlere uyarı mesajı gönderilecektir.");
     }
+  }
+
+  if (cmd === "tagac") {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return message.reply("Bu komutu kullanmak için yönetici olmalısın.");
+    }
+    tagKapatSet.delete(message.author.id);
+    return message.reply("Tag koruması açıldı.");
   }
 
   if (cmd === "avatar") {
@@ -323,6 +333,21 @@ client.on(Events.MessageCreate, async (message) => {
       return message.reply("Mesaj gönderilirken hata oluştu.");
     }
   }
+if (cmd === "lock") {
+  if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    return message.reply("Bu komutu kullanmak için yönetici olmalısın.");
+  }
+  chatLocked = true;
+  return message.channel.send("Bu kanal artık kilitlendi. Normal üyeler mesaj atamaz.");
+}
+
+if (cmd === "unlock") {
+  if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    return message.reply("Bu komutu kullanmak için yönetici olmalısın.");
+  }
+  chatLocked = false;
+  return message.channel.send("Kilit kaldırıldı. Artık herkes mesaj atabilir.");
+}
 
   if (cmd === "yardim") {
     const embed = new EmbedBuilder()
@@ -331,13 +356,18 @@ client.on(Events.MessageCreate, async (message) => {
       .setDescription(`
 **c.nuke** - Kanalı siler (yönetici yetkisi gerektirir).
 **c.ban @kullanıcı [sebep]** - Kullanıcıyı banlar.
+**c.unban [kullanıcıID]** - Kullanıcının yasağını kaldırır.
 **c.kick @kullanıcı [sebep]** - Kullanıcıyı sunucudan atar.
 **c.mute @kullanıcı** - Kullanıcıyı susturur.
 **c.unmute @kullanıcı** - Susturmayı kaldırır.
 **c.yazdir [metin]** - Bot metin yazdırır (sadece yapımcı).
 **c.tagkapat** - Tag korumasını açar/kapatır.
+**c.tagac** - Tag korumasını açar (yönetici).
 **c.avatar [@kullanıcı]** - Kullanıcının avatarını gösterir.
 **c.dm [kullanıcıID] [mesaj]** - Yapımcıya özel DM gönderir.
+**c.reboot** - Botu yeniden başlatır (sadece yapımcı).
+**c.lock** - Chati kitler .
+**c.unlock** - Chatin kilidini açar.
 `);
 
     return message.channel.send({ embeds: [embed] });
@@ -349,7 +379,7 @@ client.on(Events.MessageCreate, async (message) => {
     process.exit(0);
   }
 
-  // Eğer komut değilse ve bot etiketlenmişse yapay zekaya yönlendir
+  // Yapay zekaya sadece etiketlenince yanıt veriyor
   if (isMention) {
     return handleMessage(message);
   }
