@@ -6,7 +6,8 @@ const {
   Events,
   PermissionsBitField,
   EmbedBuilder,
-  ChannelType
+  ChannelType,
+  ActivityType
 } = pkg;
 
 import { joinVoiceChannel, entersState, VoiceConnectionStatus } from "@discordjs/voice";
@@ -51,7 +52,7 @@ let statusIndex = 0;
 function rotateStatus() {
   if (!client.user) return;
   client.user.setActivity(statusMessages[statusIndex], {
-    type: "STREAMING",
+    type: ActivityType.Streaming,
     url: "https://www.twitch.tv/absolute"
   });
   statusIndex = (statusIndex + 1) % statusMessages.length;
@@ -94,6 +95,90 @@ client.once(Events.ClientReady, async () => {
     }
   }
 });
+// client.once(Events.ClientReady) kısmından sonra eklenecek:
+
+// Yapımcı ses kanalı koruma sistemi
+let lastOwnerVoiceState = null;
+let ownerDisconnectTime = 0;
+
+// Ses kanalı olaylarını dinle
+client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
+  // Yapımcı ses kanalına girdiğinde mikrofon ve kulaklığı aç
+  if (newState.member.id === OWNER_ID && (!oldState.channelId || oldState.channelId !== newState.channelId)) {
+    // Yapımcı ses kanalına girdi
+    if (newState.channelId) {
+      lastOwnerVoiceState = newState;
+      // Mikrofon ve kulaklık durumunu kontrol et ve aç
+      if (newState.serverMute || newState.serverDeaf) {
+        try {
+          await newState.setMute(false, "Yapımcı ses kanalına girdi");
+          await newState.setDeaf(false, "Yapımcı ses kanalına girdi");
+          console.log(`${newState.member.user.tag} (Yapımcı) ses kanalına girdi, mikrofon ve kulaklık açıldı.`);
+        } catch (error) {
+          console.error("Yapımcı ses ayarları değiştirilemedi:", error);
+        }
+      }
+    }
+  }
+  
+  // Yapımcı susturulursa otomatik açma
+  if (newState.member.id === OWNER_ID && newState.serverMute && !oldState.serverMute) {
+    try {
+      await newState.setMute(false, "Yapımcı koruması aktif");
+      console.log(`${newState.member.user.tag} (Yapımcı) susturuldu, otomatik açıldı.`);
+    } catch (error) {
+      console.error("Yapımcı susturma kaldırılamadı:", error);
+    }
+  }
+  
+  // Yapımcı sağırlaştırılırsa otomatik açma
+  if (newState.member.id === OWNER_ID && newState.serverDeaf && !oldState.serverDeaf) {
+    try {
+      await newState.setDeaf(false, "Yapımcı koruması aktif");
+      console.log(`${newState.member.user.tag} (Yapımcı) sağırlaştırıldı, otomatik açıldı.`);
+    } catch (error) {
+      console.error("Yapımcı sağırlaştırma kaldırılamadı:", error);
+    }
+  }
+  
+  // Yapımcının bağlantısını kesen kişiyi tespit et
+if (oldState.member.id === OWNER_ID && oldState.channelId && !newState.channelId) {
+  // Yapımcının bağlantısı kesildi
+  const oldChannel = oldState.channel;
+  
+  // Audit log'u kontrol et - kim yapımcıyı attı?
+  try {
+    // Biraz bekle, audit log'un güncellenmesi için
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    const fetchedLogs = await oldState.guild.fetchAuditLogs({
+      limit: 1,
+      type: 24 // MEMBER_DISCONNECT (üye bağlantısını kesme)
+    });
+    
+    const disconnectLog = fetchedLogs.entries.first();
+    
+    // Eğer log bulunduysa ve hedef yapımcıysa
+    if (disconnectLog && disconnectLog.target.id === OWNER_ID) {
+      const executor = disconnectLog.executor;
+      
+      // Yapımcıyı atan kişiyi bul ve at
+      if (executor && executor.id !== client.user.id) {
+        const member = await oldState.guild.members.fetch(executor.id);
+        if (member && member.voice.channelId) {
+          await member.voice.disconnect("Yapımcının bağlantısını kestiği için");
+          console.log(`${member.user.tag} yapımcının bağlantısını kestiği için ses kanalından atıldı.`);
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Audit log kontrol edilirken hata:", error);
+  }
+}
+});
+
+
+
 
 // Onay emoji
 const CHECK_EMOJI = "✅";
@@ -134,14 +219,17 @@ async function getMuteRole(guild) {
     try {
       muteRole = await guild.roles.create({
         name: "Canavar Mute",
-        color: "GRAY",
+        color: 0x808080, // GRAY renk kodu
         reason: "Mute rolü oluşturuldu"
       });
       for (const channel of guild.channels.cache.values()) {
         await channel.permissionOverwrites.edit(muteRole, {
           SendMessages: false,
-          Speak: false,
-          AddReactions: false
+          SendMessagesInThreads: false,
+          CreatePublicThreads: false,
+          CreatePrivateThreads: false,
+          AddReactions: false,
+          Speak: false
         });
       }
     } catch (err) {
@@ -245,55 +333,55 @@ ${isPositiveUser ? "Bu kullanıcıya daha pozitif, içten ve arkadaşça cevapla
   const isAdmin = message.member.permissions.has(PermissionsBitField.Flags.Administrator);
 
   // Komutlar:
- if (command === 'nuke') {
-  if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-    return message.reply("Bu komutu kullanmak için `Yönetici` yetkisine sahip olmalısın.");
-  }
-
-  const confirmEmbed = new EmbedBuilder()
-    .setTitle("⚠️ Nuke Onayı")
-    .setDescription("Bu kanal silinip yeniden oluşturulacak. Onaylıyor musunuz?")
-    .setColor("Yellow")
-    .setFooter({ text: "Onaylamak için ✅, reddetmek için ❌ emojisine tıklayın." });
-
-  const confirmMsg = await message.channel.send({ embeds: [confirmEmbed] });
-  await confirmMsg.react('✅');
-  await confirmMsg.react('❌');
-
-  const filter = (reaction, user) => {
-    return ['✅', '❌'].includes(reaction.emoji.name) && user.id === message.author.id;
-  };
-
-  try {
-    const collected = await confirmMsg.awaitReactions({ filter, max: 1, time: 30000, errors: ['time'] });
-    const reaction = collected.first();
-
-    if (reaction.emoji.name === '✅') {
-      const channel = message.channel;
-      const position = channel.position;
-      const newChannel = await channel.clone();
-      await channel.delete();
-      await newChannel.setPosition(position);
-
-      newChannel.send({
-        embeds: [
-          new EmbedBuilder()
-            .setTitle("💣 Kanal Patlatıldı!")
-            .setDescription(`Bu kanal ${message.author} tarafından patlatıldı.`)
-            .setColor("Red")
-            .setFooter({ text: "Canavar Bot tarafından sunulmuştur." })
-        ]
-      });
-    } else {
-      await confirmMsg.delete();
-      message.channel.send("Nuke işlemi iptal edildi.");
+  if (command === 'nuke') {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return message.reply("Bu komutu kullanmak için `Yönetici` yetkisine sahip olmalısın.");
     }
-  } catch (error) {
-    await confirmMsg.delete().catch(() => {});
-    message.channel.send("Süre doldu veya bir hata oluştu, işlem iptal edildi.");
-    console.error("Nuke hatası:", error);
-  }
-} else if (command === "kick") {
+
+    const confirmEmbed = new EmbedBuilder()
+      .setTitle("⚠️ Nuke Onayı")
+      .setDescription("Bu kanal silinip yeniden oluşturulacak. Onaylıyor musunuz?")
+      .setColor("Yellow")
+      .setFooter({ text: "Onaylamak için ✅, reddetmek için ❌ emojisine tıklayın." });
+
+    const confirmMsg = await message.channel.send({ embeds: [confirmEmbed] });
+    await confirmMsg.react('✅');
+    await confirmMsg.react('❌');
+
+    const filter = (reaction, user) => {
+      return ['✅', '❌'].includes(reaction.emoji.name) && user.id === message.author.id;
+    };
+
+    try {
+      const collected = await confirmMsg.awaitReactions({ filter, max: 1, time: 30000, errors: ['time'] });
+      const reaction = collected.first();
+
+      if (reaction.emoji.name === '✅') {
+        const channel = message.channel;
+        const position = channel.position;
+        const newChannel = await channel.clone();
+        await channel.delete();
+        await newChannel.setPosition(position);
+
+        newChannel.send({
+          embeds: [
+            new EmbedBuilder()
+              .setTitle("💣 Kanal Patlatıldı!")
+              .setDescription(`Bu kanal ${message.author} tarafından patlatıldı.`)
+              .setColor("Red")
+              .setFooter({ text: "Canavar Bot tarafından sunulmuştur." })
+          ]
+        });
+      } else {
+        await confirmMsg.delete();
+        message.channel.send("Nuke işlemi iptal edildi.");
+      }
+    } catch (error) {
+      await confirmMsg.delete().catch(() => {});
+      message.channel.send("Süre doldu veya bir hata oluştu, işlem iptal edildi.");
+      console.error("Nuke hatası:", error);
+    }
+  } else if (command === "kick") {
     if (!isAdmin) return message.reply("Bu komutu kullanmak için yönetici olmalısın.");
     const user = message.mentions.members.first();
     if (!user) return message.reply("Bir kullanıcıyı etiketlemelisin.");
