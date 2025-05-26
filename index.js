@@ -245,33 +245,55 @@ ${isPositiveUser ? "Bu kullanıcıya daha pozitif, içten ve arkadaşça cevapla
   const isAdmin = message.member.permissions.has(PermissionsBitField.Flags.Administrator);
 
   // Komutlar:
-    else if (command === 'nuke') {
-        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return message.reply("Bu komutu kullanmak için `Yönetici` yetkisine sahip olmalısın.");
-        }
+ if (command === 'nuke') {
+  if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    return message.reply("Bu komutu kullanmak için `Yönetici` yetkisine sahip olmalısın.");
+  }
 
-        try {
-            const channel = message.channel;
-            const position = channel.position;
-            const newChannel = await channel.clone();
-            await channel.delete();
-            await newChannel.setPosition(position);
+  const confirmEmbed = new EmbedBuilder()
+    .setTitle("⚠️ Nuke Onayı")
+    .setDescription("Bu kanal silinip yeniden oluşturulacak. Onaylıyor musunuz?")
+    .setColor("Yellow")
+    .setFooter({ text: "Onaylamak için ✅, reddetmek için ❌ emojisine tıklayın." });
 
-            newChannel.send({
-                embeds: [
-                    new EmbedBuilder()
-                        .setTitle("💣 Kanal Patlatıldı!")
-                        .setDescription(`Bu kanal ${message.author} tarafından patlatıldı.`)
-                        .setColor("Red")
-                        .setFooter({ text: "Canavar Bot tarafından sunulmuştur." })
-                ]
-            });
-        } catch (error) {
-            console.error("Nuke hatası:", error);
-            message.channel.send("❌ Kanal patlatılırken bir hata oluştu.");
-        }
+  const confirmMsg = await message.channel.send({ embeds: [confirmEmbed] });
+  await confirmMsg.react('✅');
+  await confirmMsg.react('❌');
+
+  const filter = (reaction, user) => {
+    return ['✅', '❌'].includes(reaction.emoji.name) && user.id === message.author.id;
+  };
+
+  try {
+    const collected = await confirmMsg.awaitReactions({ filter, max: 1, time: 30000, errors: ['time'] });
+    const reaction = collected.first();
+
+    if (reaction.emoji.name === '✅') {
+      const channel = message.channel;
+      const position = channel.position;
+      const newChannel = await channel.clone();
+      await channel.delete();
+      await newChannel.setPosition(position);
+
+      newChannel.send({
+        embeds: [
+          new EmbedBuilder()
+            .setTitle("💣 Kanal Patlatıldı!")
+            .setDescription(`Bu kanal ${message.author} tarafından patlatıldı.`)
+            .setColor("Red")
+            .setFooter({ text: "Canavar Bot tarafından sunulmuştur." })
+        ]
+      });
+    } else {
+      await confirmMsg.delete();
+      message.channel.send("Nuke işlemi iptal edildi.");
     }
- if (command === "kick") {
+  } catch (error) {
+    await confirmMsg.delete().catch(() => {});
+    message.channel.send("Süre doldu veya bir hata oluştu, işlem iptal edildi.");
+    console.error("Nuke hatası:", error);
+  }
+} else if (command === "kick") {
     if (!isAdmin) return message.reply("Bu komutu kullanmak için yönetici olmalısın.");
     const user = message.mentions.members.first();
     if (!user) return message.reply("Bir kullanıcıyı etiketlemelisin.");
