@@ -21,6 +21,19 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Global değişkenler - Kodun başına taşındı
+const chatLocked = false; // Chat kilit durumu için; bunu kendi mantığına göre yönetmelisin
+const tagKapatSet = new Set(); // Tag koruması için
+const mutedUsers = new Set(); // Susturulan kullanıcılar için
+const userHistories = new Map(); // Yapay zeka sohbet geçmişi için
+const userNames = new Map(); // Kullanıcı isimleri için
+const OWNER_ID = process.env.OWNER_ID || "SahipIDBuraya"; // Yapımcı ID'si mutlaka .env veya burada tanımlı olmalı
+const GROQ_API_KEY = process.env.GROQ_API_KEY || ""; // API anahtarı .env'den alınmalı
+
+// Onay emoji
+const CHECK_EMOJI = "✅";
+const CROSS_EMOJI = "❌";
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -71,7 +84,7 @@ async function joinVoice(channel) {
       channelId: channel.id,
       guildId: channel.guild.id,
       adapterCreator: channel.guild.voiceAdapterCreator,
-      selfDeaf: false
+      selfDeaf: true // Kulaklık kapalı olarak başlasın
     });
     await entersState(connection, VoiceConnectionStatus.Ready, 30_000);
     console.log(`Bot ses kanalına katıldı: ${channel.name}`);
@@ -95,7 +108,6 @@ client.once(Events.ClientReady, async () => {
     }
   }
 });
-// client.once(Events.ClientReady) kısmından sonra eklenecek:
 
 // Yapımcı ses kanalı koruma sistemi
 let lastOwnerVoiceState = null;
@@ -109,14 +121,13 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
     if (newState.channelId) {
       lastOwnerVoiceState = newState;
       // Mikrofon ve kulaklık durumunu kontrol et ve aç
-      if (newState.serverMute || newState.serverDeaf) {
-        try {
-          await newState.setMute(false, "Yapımcı ses kanalına girdi");
-          await newState.setDeaf(false, "Yapımcı ses kanalına girdi");
-          console.log(`${newState.member.user.tag} (Yapımcı) ses kanalına girdi, mikrofon ve kulaklık açıldı.`);
-        } catch (error) {
-          console.error("Yapımcı ses ayarları değiştirilemedi:", error);
-        }
+      try {
+        // Her durumda mikrofon ve kulaklığı aç (yapımcı girdiğinde)
+        await newState.setMute(false, "Yapımcı ses kanalına girdi");
+        await newState.setDeaf(false, "Yapımcı ses kanalına girdi");
+        console.log(`${newState.member.user.tag} (Yapımcı) ses kanalına girdi, mikrofon ve kulaklık açıldı.`);
+      } catch (error) {
+        console.error("Yapımcı ses ayarları değiştirilemedi:", error);
       }
     }
   }
@@ -142,56 +153,51 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
   }
   
   // Yapımcının bağlantısını kesen kişiyi tespit et
-if (oldState.member.id === OWNER_ID && oldState.channelId && !newState.channelId) {
-  // Yapımcının bağlantısı kesildi
-  const oldChannel = oldState.channel;
-  
-  // Audit log'u kontrol et - kim yapımcıyı attı?
-  try {
-    // Biraz bekle, audit log'un güncellenmesi için
-    await new Promise(resolve => setTimeout(resolve, 1000));
+  if (oldState.member.id === OWNER_ID && oldState.channelId && !newState.channelId) {
+    // Yapımcının bağlantısı kesildi
+    const oldChannel = oldState.channel;
     
-    const fetchedLogs = await oldState.guild.fetchAuditLogs({
-      limit: 1,
-      type: 24 // MEMBER_DISCONNECT (üye bağlantısını kesme)
-    });
-    
-    const disconnectLog = fetchedLogs.entries.first();
-    
-    // Eğer log bulunduysa ve hedef yapımcıysa
-    if (disconnectLog && disconnectLog.target.id === OWNER_ID) {
-      const executor = disconnectLog.executor;
+    // Audit log'u kontrol et - kim yapımcıyı attı?
+    try {
+      // Biraz bekle, audit log'un güncellenmesi için
+      await new Promise(resolve => setTimeout(resolve, 1000));
       
-      // Yapımcıyı atan kişiyi bul ve at
-      if (executor && executor.id !== client.user.id) {
-        const member = await oldState.guild.members.fetch(executor.id);
-        if (member && member.voice.channelId) {
-          await member.voice.disconnect("Yapımcının bağlantısını kestiği için");
-          console.log(`${member.user.tag} yapımcının bağlantısını kestiği için ses kanalından atıldı.`);
+      const fetchedLogs = await oldState.guild.fetchAuditLogs({
+        limit: 1,
+        type: 24 // MEMBER_DISCONNECT (üye bağlantısını kesme)
+      });
+      
+      const disconnectLog = fetchedLogs.entries.first();
+      
+      // Eğer log bulunduysa ve hedef yapımcıysa
+      if (disconnectLog && disconnectLog.target.id === OWNER_ID) {
+        const executor = disconnectLog.executor;
+        
+        // Yapımcıyı atan kişiyi bul ve timeout at
+        if (executor && executor.id !== client.user.id) {
+          const member = await oldState.guild.members.fetch(executor.id);
+          if (member) {
+            try {
+              // 1 dakika timeout at
+              await member.timeout(60000, "Yapımcının bağlantısını kestiği için");
+              console.log(`${member.user.tag} yapımcının bağlantısını kestiği için 1 dakika timeout aldı.`);
+              
+              // Bilgilendirme mesajı gönder
+              const channel = oldState.guild.channels.cache.find(ch => ch.type === ChannelType.GuildText && ch.permissionsFor(oldState.guild.members.me).has(PermissionsBitField.Flags.SendMessages));
+              if (channel) {
+                channel.send(`${member} kullanıcısı yapımcının bağlantısını kestiği için 1 dakika timeout aldı.`);
+              }
+            } catch (error) {
+              console.error("Timeout uygulanamadı:", error);
+            }
+          }
         }
       }
+    } catch (error) {
+      console.error("Audit log kontrol edilirken hata:", error);
     }
-  } catch (error) {
-    console.error("Audit log kontrol edilirken hata:", error);
   }
-}
 });
-
-
-
-
-// Onay emoji
-const CHECK_EMOJI = "✅";
-const CROSS_EMOJI = "❌";
-
-// Global değişkenler (eksik olanlar)
-const chatLocked = false; // Chat kilit durumu için; bunu kendi mantığına göre yönetmelisin
-const tagKapatSet = new Set(); // Tag koruması için
-const mutedUsers = new Set(); // Susturulan kullanıcılar için
-const userHistories = new Map(); // Yapay zeka sohbet geçmişi için
-const userNames = new Map(); // Kullanıcı isimleri için
-const OWNER_ID = process.env.OWNER_ID || "SahipIDBuraya"; // Yapımcı ID'si mutlaka .env veya burada tanımlı olmalı
-const GROQ_API_KEY = process.env.GROQ_API_KEY || ""; // API anahtarı .env'den alınmalı
 
 async function askConfirmation(message, question) {
   const filter = (reaction, user) => {
